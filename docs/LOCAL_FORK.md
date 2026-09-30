@@ -22,15 +22,17 @@
 
 ```bat
 set "LLM_BASE_URL=http://127.0.0.1:8080/v1"
-set "LLM_MODEL=strata-local"
+set "LLM_MODEL=qwen3.8-flash-next"
 set "LLM_CONTEXT_WINDOW=32768"
 set "LLM_AUTO_COMPACT=24000"
 set "LLM_REASONING=medium"
 set "LLM_PLAN_REASONING=medium"
-set "LLM_MODEL_CATALOG=F:\Tmp\Strata\docs\codex-models.json"
+set "LLM_MODEL_CATALOG=F:\Tmp\Strata\docs\codex-qwen3.8-flash-next.json"
 ```
 
-将 `LLM_MODEL_CATALOG` 改为 [codex-models.json](codex-models.json) 的实际绝对路径。
+上面使用 [Qwen 专用静态模板](codex-qwen3.8-flash-next.json)，对应原版模型、32K、纯文本部署。
+推荐按 [Qwen catalog 研究与生成说明](CODEX_QWEN_CATALOG.md) 从实际 `/v1/models`
+生成部署专用文件，再将模型名、上下文、压缩阈值和 catalog 绝对路径设为工具打印的值。
 `LAN_API_KEY` 设置为 Strata 启动时的 API key；服务未设置 API key 时，
 可以在 CMD 中用 `set "LAN_API_KEY=strata-local"` 提供占位值。
 不要将真实密钥写入公开脚本或仓库。
@@ -68,15 +70,15 @@ codex ^
 - 关闭 WebSocket；本实现提供 HTTP SSE。
 - `web_search="disabled"`：Strata 不执行 OpenAI 云端搜索工具。
 - `model_catalog_json` 通过 `-c` 指定 JSON 文件，不需要 TOML 配置文件。
-  `strata-local` 是客户端别名，服务端始终调用当前已加载的模型。
-  若使用其他 `LLM_MODEL` 名称，需将 catalog 中的 `slug` 改为同名。
+  `LLM_MODEL` 应与 catalog 的 `slug` 一致；setup 的实际模型 ID 通常含量化后缀。
+  服务端仍只调用当前已加载模型。静态模板不自动适配 Swift/Coder；不要仅换名字套用。
   Catalog 为本地模型提供 `apply_patch_tool_type="freeform"`，避免未知模型的
   Codex fallback metadata 不提供自定义 `apply_patch`。
-- Catalog 含一段简短的本地编码助手指令，可按需要调整 `base_instructions`。
-  它没有伪装成 OpenAI 模型或从云端获取私有提示词。
-- `model_context_window` 和 catalog 的 `context_window` 不得超过真实引擎设置。
+- Catalog 是依据 Qwen、Strata 和 Codex 公开资料整理的社区配置，
+  包含本 Fork 编写的 `base_instructions`，不是厂商提供的官方能力文件。
+- `model_context_window`、catalog 的 `context_window` 和 `max_context_window` 不得超过真实引擎设置。
   默认示例为 32768，提前在 24000 tokens 压缩，给下一次回复留出空间。
-  若启用视觉，应将 catalog 的 `input_modalities` 加入 `image`。
+  生成工具自动读取已加载的视觉能力；无视觉模块时只声明 `text`。
 - `env_key=LAN_API_KEY` 对应同名环境变量；其值通过 Bearer 认证发送。
 
 命令行覆盖见 [官方高级配置](https://learn.chatgpt.com/docs/config-file/config-advanced)，
@@ -122,7 +124,7 @@ Codex 本地压缩通过普通 Responses 对话进行，仍受真实上下文容
 ## 验证
 
 ```powershell
-python -m unittest serve.test_responses serve.test_server serve.test_mcp serve.test_detok tools.test_model_source -q
+python -m unittest serve.test_responses serve.test_server serve.test_mcp serve.test_detok tools.test_model_source tools.test_codex_catalog -q
 python -m serve.codex_smoke
 # 允许工具执行的本机环境还应验证实际 echo 和文件修改成功：
 python -m serve.codex_smoke --require-tool-success
@@ -131,7 +133,7 @@ python -m serve.codex_smoke --require-tool-success
 MockEngine 覆盖协议及原有推理前端，无需 GPU。
 Smoke test 启动真实 Strata HTTP 层，使用脚本化引擎，由安装的真实 Codex CLI
 消费 SSE，执行函数工具、自定义 apply_patch，并回传工具结果到下一轮。
-测试同样使用 `-c` 定义 LAN provider 和 catalog，不使用 profile。
+测试从 HTTP 层的部署元数据生成 Qwen catalog，使用 `-c` 定义 LAN provider，不使用 profile。
 其隔离运行目录、标记文件和诊断保存在 `logs/codex-smoke/`，不访问真实 Codex 凭据。
 默认区分协议成功与实际工具执行成功；只读沙箱下工具错误回传也能验证多轮协议。
 目前协议链路已验证，当前受管运行环境阻止嵌套 Codex 的实际 shell/patch 执行；
@@ -140,6 +142,8 @@ Smoke test 启动真实 Strata HTTP 层，使用脚本化引擎，由安装的�
 本次最终回归：80 项，OK（3 项依上游条件跳过）；`git diff --check` 与 Python
 语法编译通过。命令行 provider 参数及 catalog 已由 Codex CLI 0.158.0 加载验证，
 三轮 HTTP 协议 smoke test 通过。
+Qwen catalog 修订另有 4 项生成器测试通过，且与 10 项 Responses 回归联合验证通过；
+字段来源与真实模型验证边界见 [Qwen catalog 说明](CODEX_QWEN_CATALOG.md)。
 
 ModelScope 已核验四个同名仓库及主要文件地址，并实际读取 Qwen safetensors 索引和
 MTP 分片的 8 字节 Range；未下载数十 GB 权重或比较完整镜像哈希。

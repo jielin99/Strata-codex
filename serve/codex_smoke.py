@@ -12,6 +12,7 @@ from pathlib import Path
 
 from serve.frontend import ChatTemplate
 from serve.server import ByteTokenizer, MockEngine, Service, make_handler, Server
+from tools.codex_catalog import build_catalog, fetch_metadata
 import threading
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,8 +36,9 @@ def main():
     shell = '<tool_call>\n<function=exec_command>\n<parameter=cmd>\nWrite-Output STRATA_SHELL_OK\n</parameter>\n</function>\n</tool_call>'
     patch = '<tool_call>\n<function=apply_patch>\n<parameter=input>\n*** Begin Patch\n*** Add File: responses-smoke.txt\n+STRATA_PATCH_OK\n*** End Patch\n</parameter>\n</function>\n</tool_call>'
     engine = MockEngine(tok, ["</think>\n\n" + shell, "</think>\n\n" + patch,
-                              "</think>\n\nSTRATA_CODEX_OK"], max_context=262144)
-    svc = Service(engine, tok, ChatTemplate(ROOT / "serve/chat_template.jinja"))
+                              "</think>\n\nSTRATA_CODEX_OK"], max_context=65536)
+    svc = Service(engine, tok, ChatTemplate(ROOT / "serve/chat_template.jinja"),
+                  model_name="qwen3.8-flash-next-iq2_xs")
     svc.api_key = "strata-smoke-test"
     requests = []
     base_handler = make_handler(svc)
@@ -67,6 +69,9 @@ def main():
 
     httpd = Server(("127.0.0.1", 0), RecordingHandler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    catalog_path = workspace / "codex-models.json"
+    catalog = build_catalog(fetch_metadata(f"http://127.0.0.1:{httpd.server_address[1]}/v1", svc.api_key))
+    catalog_path.write_text(json.dumps(catalog, indent=2), encoding="utf-8")
     command = [args.codex, "exec", "--ignore-rules", "--ephemeral", "--skip-git-repo-check",
         "--ignore-user-config", "--sandbox", "workspace-write", "--cd", str(workspace), "--json",
         "-c", 'approval_policy="never"',
@@ -85,8 +90,8 @@ def main():
         "-c", 'model_reasoning_effort=medium', "-c", 'plan_mode_reasoning_effort=medium',
         "-c", 'agents.enabled=false',
         "-c", 'web_search="disabled"',
-        "-c", f"model_catalog_json='{(ROOT / 'docs/codex-models.json').as_posix()}'",
-        "-m", "strata-local", "--disable", "apps",
+        "-c", f"model_catalog_json='{catalog_path.as_posix()}'",
+        "-m", svc.model, "--disable", "apps",
         "Run the scripted local protocol test: echo STRATA_SHELL_OK, add responses-smoke.txt containing STRATA_PATCH_OK, and reply STRATA_CODEX_OK."]
     # Isolated home prevents smoke tests from reading user credentials/plugins or
     # changing their real configuration. The provider talks only to loopback.
@@ -102,6 +107,8 @@ def main():
                    item.get("type") in ("function_call_output", "custom_tool_call_output")]
         (workspace / "tool-results.json").write_text(json.dumps(outputs, ensure_ascii=False, indent=2), encoding="utf-8")
         assert result.returncode == 0, f"Codex exited {result.returncode}; see {workspace}"
+        assert not any(f"Unknown model {svc.model}" in line for line in result.stderr.splitlines()), "deployment model used fallback metadata"
+        assert all(req.get("model") == svc.model for req in requests), "catalog model ID did not reach Strata"
         assert len(requests) >= 3, "Codex did not complete both tool rounds"
         assert any(i["type"] == "function_call_output" for i in outputs), "shell result was not replayed"
         assert any(i["type"] == "custom_tool_call_output" for i in outputs), "custom tool result was not replayed"

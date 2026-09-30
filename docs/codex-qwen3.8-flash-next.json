@@ -1,0 +1,39 @@
+{
+  "models": [
+    {
+      "slug": "qwen3.8-flash-next",
+      "display_name": "Qwen3.8-Flash-Next (Strata)",
+      "description": "Community Codex profile for original Qwen3.8-Flash-Next through Strata Responses; 32K text-only deployment example",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        {"effort": "none", "description": "Disable thinking"},
+        {"effort": "low", "description": "Short thinking"},
+        {"effort": "medium", "description": "Medium thinking"},
+        {"effort": "high", "description": "Native xhigh thinking (Strata maps high to xhigh)"},
+        {"effort": "xhigh", "description": "Native xhigh; same behavior as high, not an extra thinking tier"}
+      ],
+      "shell_type": "unified_exec",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 0,
+      "base_instructions": "You are Qwen3.8-Flash-Next, a coding assistant working through Strata in the user's workspace. Follow the user's instructions and applicable AGENTS.md files. Inspect relevant files before editing and preserve unrelated changes. Use only the supplied tools, following the function and parameter format supplied by the chat template. For an apply_patch tool represented with an input parameter, put the complete raw patch in that parameter. Wait for tool results before claiming commands ran or files changed. Verify changes with appropriate checks and report remaining limitations clearly.",
+      "supports_reasoning_summary_parameter": true,
+      "default_reasoning_summary": "auto",
+      "supports_reasoning_effort_updates": false,
+      "support_verbosity": false,
+      "apply_patch_tool_type": "freeform",
+      "truncation_policy": {"mode": "bytes", "limit": 10000},
+      "context_window": 32768,
+      "max_context_window": 32768,
+      "auto_compact_token_limit": 24000,
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": ["text"],
+      "supports_image_detail_original": false,
+      "supports_search_tool": false,
+      "supports_experimental_context": false,
+      "use_responses_lite": false,
+      "include_apps_usage_instructions": false
+    }
+  ]
+}
