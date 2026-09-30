@@ -3,7 +3,7 @@
 版本：`v0.1.27-local.1`。基于上游正式发布 `v0.1.27`，commit
 `a79080535d1b2a71a3419a0d97d8e7dca194b0f1`，本地分支 `local-v0.1.27`。
 2026-09-30 核验 [上游 latest release](https://github.com/Niko1221/Strata/releases/latest)
-仍指向这个 tag。此仓库只有本地提交；没有发布远端 Fork 或 PR。
+仍指向这个 tag。本社区 Fork：[jielin99/Strata-codex](https://github.com/jielin99/Strata-codex)。
 
 ## 两个独立补丁
 
@@ -104,22 +104,10 @@ Smoke test 启动真实 Strata HTTP 层，使用脚本化引擎，由安装的�
 ModelScope 已核验四个同名仓库及主要文件地址，并实际读取 Qwen safetensors 索引和
 MTP 分片的 8 字节 Range；未下载数十 GB 权重或比较完整镜像哈希。
 
-## 升级与退出
+## 版本与引擎
 
-查看 release notes 后，值得升级时才迁移。先记下两个提交的 SHA：
-
-```powershell
-git log --oneline v0.1.27..local-v0.1.27
-git fetch upstream --tags
-git switch -c local-vNEXT vNEXT
-git cherry-pick <modelscope-commit> <responses-commit>
-```
-
-将 `vNEXT` 替换为选定的新发布 tag，不直接跟随频繁变动的 main。
-迁移后更新 `serve/responses.py` 的 LOCAL_VERSION 及 server 启动提示中的 base tag，
-重跑回归和 smoke test，再打 `vNEXT-local.1` 本地 tag。
-上游加原生 Responses 后，先验证普通对话、reasoning、shell、自定义 patch、多轮及压缩；
-确认可用后只迁移 ModelScope commit，删除整个 Responses 补丁即可。
+本 Fork 的功能补丁基于上游正式发布 tag，保持独立提交。
+上游提供原生 Responses 后，会验证兼容性并移除临时适配层。
 
 注意 setup 的上游预编译 engine 默认 URL 指向 latest；若需要完全固定引擎版本，启动前设置：
 
