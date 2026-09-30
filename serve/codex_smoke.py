@@ -38,7 +38,7 @@ def main():
     engine = MockEngine(tok, ["</think>\n\n" + shell, "</think>\n\n" + patch,
                               "</think>\n\nSTRATA_CODEX_OK"], max_context=65536)
     svc = Service(engine, tok, ChatTemplate(ROOT / "serve/chat_template.jinja"),
-                  model_name="qwen3.8-flash-next-iq2_xs")
+                  model_name="qwen3.8-flash-next-iq3_s")
     svc.api_key = "strata-smoke-test"
     requests = []
     base_handler = make_handler(svc)
@@ -85,7 +85,7 @@ def main():
         "-c", 'model_providers.lan.stream_idle_timeout_ms=1800000',
         "-c", 'model_providers.lan.request_max_retries=0',
         "-c", 'model_providers.lan.stream_max_retries=0',
-        "-c", 'model_context_window=65536', "-c", 'model_auto_compact_token_limit=60000',
+        "-c", 'model_context_window=65536', "-c", 'model_auto_compact_token_limit=49152',
         "-c", 'model_auto_compact_token_limit_scope=total',
         "-c", 'model_reasoning_effort=medium', "-c", 'plan_mode_reasoning_effort=medium',
         "-c", 'agents.enabled=false',
@@ -109,6 +109,7 @@ def main():
         assert result.returncode == 0, f"Codex exited {result.returncode}; see {workspace}"
         assert not any(f"Unknown model {svc.model}" in line for line in result.stderr.splitlines()), "deployment model used fallback metadata"
         assert all(req.get("model") == svc.model for req in requests), "catalog model ID did not reach Strata"
+        assert requests[0].get("reasoning", {}).get("effort") == "medium", "medium effort did not reach Strata"
         assert len(requests) >= 3, "Codex did not complete both tool rounds"
         assert any(i["type"] == "function_call_output" for i in outputs), "shell result was not replayed"
         assert any(i["type"] == "custom_tool_call_output" for i in outputs), "custom tool result was not replayed"

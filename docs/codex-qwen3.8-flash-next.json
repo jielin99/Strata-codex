@@ -1,10 +1,10 @@
 {
   "models": [
     {
-      "slug": "qwen3.8-flash-next",
-      "display_name": "Qwen3.8-Flash-Next (Strata)",
-      "description": "Community Codex profile for original Qwen3.8-Flash-Next through Strata Responses; 32K text-only deployment example",
-      "default_reasoning_level": "high",
+      "slug": "qwen3.8-flash-next-iq3_s",
+      "display_name": "Qwen3.8-Flash-Next IQ3_S (Strata)",
+      "description": "Community Codex profile for original Qwen3.8-Flash-Next IQ3_S through Strata Responses; 64K text-only deployment example",
+      "default_reasoning_level": "medium",
       "supported_reasoning_levels": [
         {"effort": "none", "description": "Disable thinking"},
         {"effort": "low", "description": "Short thinking"},
@@ -23,9 +23,9 @@
       "support_verbosity": false,
       "apply_patch_tool_type": "freeform",
       "truncation_policy": {"mode": "bytes", "limit": 10000},
-      "context_window": 32768,
-      "max_context_window": 32768,
-      "auto_compact_token_limit": 24000,
+      "context_window": 65536,
+      "max_context_window": 65536,
+      "auto_compact_token_limit": 49152,
       "effective_context_window_percent": 95,
       "experimental_supported_tools": [],
       "input_modalities": ["text"],

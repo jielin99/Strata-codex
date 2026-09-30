@@ -4,7 +4,7 @@ from tools.codex_catalog import build_catalog, metadata_from_config
 from serve.frontend import effort_kwargs
 
 
-def metadata(context=65536, model="qwen3.8-flash-next-iq2_xs", modalities=None):
+def metadata(context=65536, model="qwen3.8-flash-next-iq3_s", modalities=None):
     return {"id": model, "meta": {"n_ctx": context},
             "architecture": {"input_modalities": ["text"] if modalities is None else modalities}}
 
@@ -12,7 +12,7 @@ def metadata(context=65536, model="qwen3.8-flash-next-iq2_xs", modalities=None):
 class CatalogTests(unittest.TestCase):
     def test_deployment_cap_and_vision(self):
         model = build_catalog(metadata(modalities=["image", "text"]))["models"][0]
-        self.assertEqual(model["slug"], "qwen3.8-flash-next-iq2_xs")
+        self.assertEqual(model["slug"], "qwen3.8-flash-next-iq3_s")
         self.assertEqual((model["context_window"], model["max_context_window"]), (65536, 65536))
         self.assertEqual(model["input_modalities"], ["text", "image"])
         self.assertEqual(model["auto_compact_token_limit"], 49152)
@@ -53,7 +53,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(mapping["low"], {"reasoning_effort": "low"})
         self.assertEqual(mapping["medium"], {"reasoning_effort": "medium"})
         self.assertEqual(mapping["high"], mapping["xhigh"])
-        self.assertEqual(mapping[model["default_reasoning_level"]], {"reasoning_effort": "xhigh"})
+        self.assertEqual(mapping[model["default_reasoning_level"]], {"reasoning_effort": "medium"})
 
 
 if __name__ == "__main__":

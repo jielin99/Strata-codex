@@ -22,15 +22,15 @@
 
 ```bat
 set "LLM_BASE_URL=http://127.0.0.1:8080/v1"
-set "LLM_MODEL=qwen3.8-flash-next"
-set "LLM_CONTEXT_WINDOW=32768"
-set "LLM_AUTO_COMPACT=24000"
+set "LLM_MODEL=qwen3.8-flash-next-iq3_s"
+set "LLM_CONTEXT_WINDOW=65536"
+set "LLM_AUTO_COMPACT=49152"
 set "LLM_REASONING=medium"
 set "LLM_PLAN_REASONING=medium"
 set "LLM_MODEL_CATALOG=F:\Tmp\Strata\docs\codex-qwen3.8-flash-next.json"
 ```
 
-上面使用 [Qwen 专用静态模板](codex-qwen3.8-flash-next.json)，对应原版模型、32K、纯文本部署。
+上面使用 [Qwen 专用静态模板](codex-qwen3.8-flash-next.json)，对应原版 IQ3_S、64K、medium 推理、纯文本部署。
 推荐按 [Qwen catalog 研究与生成说明](CODEX_QWEN_CATALOG.md) 从实际 `/v1/models`
 生成部署专用文件，再将模型名、上下文、压缩阈值和 catalog 绝对路径设为工具打印的值。
 `LAN_API_KEY` 设置为 Strata 启动时的 API key；服务未设置 API key 时，
@@ -77,7 +77,7 @@ codex ^
 - Catalog 是依据 Qwen、Strata 和 Codex 公开资料整理的社区配置，
   包含本 Fork 编写的 `base_instructions`，不是厂商提供的官方能力文件。
 - `model_context_window`、catalog 的 `context_window` 和 `max_context_window` 不得超过真实引擎设置。
-  默认示例为 32768，提前在 24000 tokens 压缩，给下一次回复留出空间。
+  默认示例为 65536，提前在 49152 tokens 压缩，给下一次回复留出空间。
   生成工具自动读取已加载的视觉能力；无视觉模块时只声明 `text`。
 - `env_key=LAN_API_KEY` 对应同名环境变量；其值通过 Bearer 认证发送。
 

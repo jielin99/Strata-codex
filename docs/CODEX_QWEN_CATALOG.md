@@ -4,7 +4,8 @@
 不是 Qwen 或 OpenAI 发布的官方 Codex catalog。研究日期：2026-09-30；
 Strata 基础：`v0.1.27`；实际 CLI 验证：Codex `0.158.0`。
 
-[静态模板](codex-qwen3.8-flash-next.json) 展示 32768 上下文、纯文本部署。
+[静态模板](codex-qwen3.8-flash-next.json) 默认使用 `qwen3.8-flash-next-iq3_s`、
+65536 上下文、`medium` 推理、纯文本部署；计划模式同样使用 `medium`。
 推荐用独立的 [生成工具](../tools/codex_catalog.py) 绑定实际部署信息，
 而不是把理论能力直接写进客户端。该工具不改推理服务、setup 或 Codex 全局配置。
 
@@ -16,7 +17,7 @@ Strata 基础：`v0.1.27`；实际 CLI 验证：Codex `0.158.0`。
 | `context_window` | 使用服务返回的 `meta.n_ctx`，或显式选择更小的容量。Qwen 原生上限为 262144，不能将云端版本或扩展上下文的 1M 套到普通 Strata 部署。 |
 | `max_context_window` | 等于选定部署容量，防止 Codex 的命令行上下文覆盖扩大到引擎容量之外。它在这里是部署保护上限，不是模型理论上限。 |
 | `input_modalities` | 根据服务的 `architecture.input_modalities`；没有视觉模块只声明 `text`，加载后才声明 `image`。 |
-| `default_reasoning_level` | `high`，对应 Qwen 的原生默认 `xhigh`。启动命令显式指定 `medium` 时，仍以命令为准。 |
+| `default_reasoning_level` | 本 Fork 默认选 `medium`，属于使用偏好；Qwen 原生默认是 `xhigh`，并不因此改变。启动命令显式指定时，以命令为准。 |
 | `supported_reasoning_levels` | `none / low / medium / high / xhigh`。`none` 经 Strata 关闭思考；`high` 与 `xhigh` 完全同档，不是五种不同强度。 |
 | `supports_reasoning_summary_parameter` | `true`，由 Responses 兼容层支持；返回模型原始明文 thinking。不是 Qwen 单独提供的摘要模型或私有加密推理功能。 |
 | `supports_reasoning_effort_updates` | **`false`**。Codex 此字段指 `configuration_update` 输入项；当前兼容层不支持它。普通请求的 `reasoning.effort` 可以调整，不应据此将本字段设为 true。 |
@@ -62,7 +63,7 @@ python -m tools.codex_catalog --base-url "%LLM_BASE_URL%" --context-window 32768
 服务暂未启动时，也可从 setup 生成的 JSON 离线读取：
 
 ```bat
-python -m tools.codex_catalog --config "strata-iq2_xs.json" --output "logs\codex-models.json"
+python -m tools.codex_catalog --config "strata-iq3_s.json" --output "logs\codex-models.json"
 ```
 
 离线模式反映配置意图，不能证明引擎已启动或视觉加载成功；部署后优先重新读取服务。

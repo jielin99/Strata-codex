@@ -2,7 +2,7 @@
 
 Uses only the standard library. Does not download weights or change Codex config.
     python -m tools.codex_catalog --base-url http://127.0.0.1:8080/v1
-    python -m tools.codex_catalog --config strata-iq2_xs.json
+    python -m tools.codex_catalog --config strata-iq3_s.json
 """
 import argparse
 import json
