@@ -45,6 +45,7 @@ import zipfile
 from pathlib import Path
 
 from tools.model_source import model_url
+from tools.github_source import github_url
 
 ROOT = Path(__file__).resolve().parent
 WIN = os.name == "nt"
@@ -546,7 +547,7 @@ def free_gb(path):
 def download(url, dst: Path, what=None):
     """Resumable HTTP(S) download with a progress line; `file://` and plain paths are copied (tests, mirrors).
     A finished file gets a <name>.done mark, so a later run skips it without asking the server."""
-    url = model_url(url)
+    url = github_url(model_url(url))
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists() and done(dst):
         ok(f"{what or dst.name} already downloaded")
@@ -837,7 +838,7 @@ def get_prebuilt(url_base, gpu, vision, updating=False) -> Path | None:
     base = url_base if url_base.endswith(("/", "\\")) else url_base + "/"
     if base.startswith(("http://", "https://")):
         try:                                           # not published (yet), or no internet: compile instead
-            req = urllib.request.Request(base + PREBUILT_ASSET, method="HEAD", headers={"User-Agent": "strata-setup"})
+            req = urllib.request.Request(github_url(base + PREBUILT_ASSET), method="HEAD", headers={"User-Agent": "strata-setup"})
             urllib.request.urlopen(req, timeout=60).close()
         except OSError as e:
             warn(f"no ready-made engine at {base} ({e})" + ("" if updating else ": compiling instead"))
