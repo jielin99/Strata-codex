@@ -26,6 +26,11 @@ import time
 import urllib.error
 import urllib.request
 
+try:
+    from .model_source import model_url
+except ImportError:
+    from model_source import model_url
+
 # #214: a fixed commit of the checkpoint (its `sha` from https://huggingface.co/api/models/Qwen/Qwen3.8-Flash-Next
 # on 2026-09-30), so every install reads the same tensors; STRATA_MTP_REVISION overrides it (e.g. main).  When the
 # repository no longer has it, the current files are read instead, with a message (resolve_repo).
@@ -108,6 +113,7 @@ SHA256 = {
 
 
 def get(url, start=None, end=None, retries=4):
+    url = model_url(url)
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "strata-mtp-fetch"})
@@ -116,7 +122,9 @@ def get(url, start=None, end=None, retries=4):
             with urllib.request.urlopen(req, timeout=120) as r:
                 if start is not None:
                     check_range(r.status, r.headers.get("Content-Range"), start, end)
-                data = r.read()
+                    data = r.read(end - start + 2)
+                else:
+                    data = r.read()
             if start is not None and len(data) != end - start + 1:
                 raise IOError("short range read: %d of %d" % (len(data), end - start + 1))
             return data
