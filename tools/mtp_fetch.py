@@ -19,18 +19,31 @@ import sys
 import time
 import urllib.request
 
+try:  # both `python tools/mtp_fetch.py` and module imports
+    from .model_source import model_url
+except ImportError:
+    from model_source import model_url
+
 REPO = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/main/"
 DTYPE_BYTES = {"BF16": 2, "F16": 2, "F32": 4, "F8_E4M3": 1, "I64": 8, "I32": 4}
 
 
 def get(url, start=None, end=None, retries=4):
+    url = model_url(url)
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "strata-mtp-fetch"})
             if start is not None:
                 req.add_header("Range", "bytes=%d-%d" % (start, end))
             with urllib.request.urlopen(req, timeout=120) as r:
-                data = r.read()
+                if start is not None:
+                    # Never read a whole 3 GB shard if a mirror ignores Range.
+                    expected = f"bytes {start}-{end}/"
+                    if r.status != 206 or not r.headers.get("Content-Range", "").startswith(expected):
+                        raise IOError("model source did not honor the requested byte range")
+                    data = r.read(end - start + 2)
+                else:
+                    data = r.read()
             if start is not None and len(data) != end - start + 1:
                 raise IOError("short range read: %d of %d" % (len(data), end - start + 1))
             return data

@@ -44,6 +44,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from tools.model_source import model_url
+
 ROOT = Path(__file__).resolve().parent
 WIN = os.name == "nt"
 HF = "https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/main/"
@@ -544,6 +546,7 @@ def free_gb(path):
 def download(url, dst: Path, what=None):
     """Resumable HTTP(S) download with a progress line; `file://` and plain paths are copied (tests, mirrors).
     A finished file gets a <name>.done mark, so a later run skips it without asking the server."""
+    url = model_url(url)
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists() and done(dst):
         ok(f"{what or dst.name} already downloaded")
