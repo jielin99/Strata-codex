@@ -1,12 +1,13 @@
 # Strata 本地兼容版本
 
-版本：`v0.1.27-local.2`。基于上游正式发布 `v0.1.27`，commit
+版本：`v0.1.27-local.3`。基于上游正式发布 `v0.1.27`，commit
 `a79080535d1b2a71a3419a0d97d8e7dca194b0f1`，本地分支 `local-v0.1.27`。
 2026-09-30 核验 [上游 latest release](https://github.com/Niko1221/Strata/releases/latest)
 仍指向这个 tag。本社区 Fork：[jielin99/Strata-codex](https://github.com/jielin99/Strata-codex)。
 
-本次修订解决 Codex 请求携带可选 `web_search` 定义时被拒绝的问题，
-增加 GitHub 下载加速前缀，并将启动示例改为 `workspace-write` + `on-request`。
+本次修订将内置搜索不可用的日志提示改为每个服务器进程只打印一次。
+保留 `.2` 的可选 `web_search` 请求兼容、GitHub 下载加速前缀，
+以及 `workspace-write` + `on-request` 启动示例。
 继续使用已有 Codex 启动脚本。2026-10-01 部署用户反馈真实模型下 Codex 可正常执行。
 
 ## 本地功能
@@ -78,6 +79,8 @@ codex ^
 - 关闭 WebSocket；本实现提供 HTTP SSE。
 - `web_search="disabled"`：可在现有 Codex 启动脚本关闭内置搜索。Strata 不执行
   OpenAI 云端搜索；接口也兼容普通请求携带可选的 web_search 定义，不再因此报错。
+  被丢弃的内置搜索每次服务器启动只提示一次，并发请求也不会重复打印；
+  每轮仍向模型说明内置搜索不可用，不影响请求处理和客户端工具。
 - `model_catalog_json` 通过 `-c` 指定 JSON 文件，不需要 TOML 配置文件。
   `LLM_MODEL` 应与 catalog 的 `slug` 一致；setup 的实际模型 ID 通常含量化后缀。
   服务端仍只调用当前已加载模型。静态模板不自动适配 Swift/Coder；不要仅换名字套用。
@@ -179,6 +182,10 @@ Qwen catalog 修订另有 4 项生成器测试通过，且与 10 项 Responses �
 真实 Codex CLI 0.158.0 在 cached 和 live 两种配置下均发送了内置 web_search
 定义，服务器仍完成三轮 function/custom 工具回传协议。测试引擎为 MockEngine，
 与上述部署用户的真实模型验证分开记录。
+
+2026-10-01 日志去重修订：联合回归 93 项通过（3 项依上游条件跳过），
+包括连续 JSON/SSE 请求、8 线程并发提示去重和 catalog 生成器测试。
+三轮 Codex CLI 协议 smoke test 通过，内置搜索不可用提示仅打印一行。
 
 ModelScope 已核验四个同名仓库及主要文件地址，并实际读取 Qwen safetensors 索引和
 MTP 分片的 8 字节 Range；未下载数十 GB 权重或比较完整镜像哈希。

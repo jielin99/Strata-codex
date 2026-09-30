@@ -1,4 +1,6 @@
 """Protocol tests over HTTP and the real shared parser/MockEngine (no model/GPU)."""
+import contextlib
+import io
 import json
 import socket
 import threading
@@ -6,8 +8,11 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
+from serve import responses
 from serve.frontend import ChatTemplate, Event, ToolCall
 from serve.responses import ResponseStream, responses_to_chat
 from serve.server import ByteTokenizer, EngineDied, MockEngine, Service, serve
@@ -20,6 +25,21 @@ CUSTOM = {"type": "custom", "name": "apply_patch", "format": {"type": "text"}}
 
 def call(name, parameter, value):
     return f"<tool_call>\n<function={name}>\n<parameter={parameter}>\n{value}\n</parameter>\n</function>\n</tool_call>"
+
+
+class ResponsesNotice(unittest.TestCase):
+    def test_dropped_web_search_notice_is_logged_once_concurrently(self):
+        output = io.StringIO()
+        barrier = threading.Barrier(8)
+
+        def notify():
+            barrier.wait(timeout=5)
+            responses._note_web_search_dropped()
+
+        with patch.object(responses, "_notice_sent", False), contextlib.redirect_stdout(output):
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(lambda _: notify(), range(8)))
+        self.assertEqual(output.getvalue().count("Responses: optional built-in web search unavailable"), 1)
 
 
 class ResponsesHTTP(unittest.TestCase):
@@ -130,6 +150,19 @@ class ResponsesHTTP(unittest.TestCase):
                 prompt = self.svc.tok.decode(self.engine.last_prompt)
                 self.assertIn("Built-in web search is unavailable", prompt)
                 self.assertIn("Keep the original instruction", prompt)
+
+    def test_dropped_web_search_notice_is_logged_once(self):
+        self.start()
+        output = io.StringIO()
+        with patch.object(responses, "_notice_sent", False), contextlib.redirect_stdout(output):
+            for stream in (False, True, False):
+                code, body = self.post({"tools": [{"type": "web_search"}, FUNCTION], "stream": stream})
+                self.assertEqual(code, 200, body)
+                final = body[-1]["response"] if stream else body
+                self.assertEqual(final["tools"], [FUNCTION])
+                self.assertIn("Built-in web search is unavailable", self.svc.tok.decode(self.engine.last_prompt))
+        self.assertEqual(output.getvalue().count("Responses: optional built-in web search unavailable"), 1)
+        self.assertIn("(this notice only appears once per server run)", output.getvalue())
 
     def test_search_required_and_unknown_tools_remain_errors(self):
         self.start()

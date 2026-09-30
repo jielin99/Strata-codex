@@ -13,8 +13,20 @@ import uuid
 
 from serve.frontend import openai_to_messages
 
-LOCAL_VERSION = "v0.1.27-local.2"
+LOCAL_VERSION = "v0.1.27-local.3"
 OPTIONAL_WEB_SEARCH_TYPES = frozenset(("web_search", "web_search_preview", "web_search_preview_2025_03_11"))
+_notice_lock = threading.Lock()
+_notice_sent = False
+
+
+def _note_web_search_dropped():
+    global _notice_sent
+    with _notice_lock:
+        if _notice_sent:
+            return
+        print("[strata] Responses: optional built-in web search unavailable; continuing with client tools "
+              "(this notice only appears once per server run)", flush=True)
+        _notice_sent = True
 
 
 def _object(value, field):
@@ -364,7 +376,7 @@ class ResponseStream:
 def handle_responses(handler, svc, req):
     chat, names = responses_to_chat(req)
     if len(_client_tools(req.get("tools") or [])) != len(req.get("tools") or []):
-        print("[strata] Responses: optional built-in web search unavailable; continuing with client tools", flush=True)
+        _note_web_search_dropped()
     chat = svc.with_shared(chat, "openai")
     messages, tools, kwargs = openai_to_messages(chat)
     budget = int(chat.get("max_completion_tokens") or chat.get("max_tokens") or 0)

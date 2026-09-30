@@ -1,6 +1,6 @@
 <h1 align="center">Strata</h1>
 
-> **Strata-codex v0.1.27-local.2 社区兼容版本**：基于上游 `v0.1.27`，增加可选的
+> **Strata-codex v0.1.27-local.3 社区兼容版本**：基于上游 `v0.1.27`，增加可选的
 > **ModelScope 下载支持**与 **Codex Responses API**。
 > 设置 `STRATA_USE_MODELSCOPE=1` 可启用国内模型源；Codex 命令行启动和兼容范围见
 > [使用说明](docs/LOCAL_FORK.md)，下载源设置见 [ModelScope 说明](docs/LOCAL_MODELSCOPE.md)。
