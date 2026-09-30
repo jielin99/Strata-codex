@@ -76,7 +76,7 @@ class ResponsesHTTP(unittest.TestCase):
         patch_text = '*** Begin Patch\n*** Add File: x\n+中文\\"😀\n*** End Patch'
         self.start(["think</think>\n\n" + call("functions.exec_command", "cmd", "echo 中文") +
                     call("apply_patch", "input", patch_text), "</think>\n\n完成"])
-        tools = [{"type": "namespace", "name": "functions", "tools": [FUNCTION]}, CUSTOM]
+        tools = [{"type": "web_search"}, {"type": "namespace", "name": "functions", "tools": [FUNCTION]}, CUSTOM]
         _, events = self.post({"stream": True, "tools": tools})
         final = events[-1]["response"]
         functions = [i for i in final["output"] if i["type"] == "function_call"]
@@ -107,13 +107,51 @@ class ResponsesHTTP(unittest.TestCase):
         self.assertEqual(result[-1]["response"]["incomplete_details"]["reason"], "max_output_tokens")
         self.assertEqual(result[-1]["response"]["usage"]["output_tokens"], 5)
         for data in ({"previous_response_id": "resp_old"}, {"store": True}, {"background": True},
-                     {"max_output_tokens": -1}, {"max_output_tokens": "5"}, {"tools": [{"type": "web_search"}]},
+                     {"max_output_tokens": -1}, {"max_output_tokens": "5"}, {"tools": [{"type": "file_search"}]},
                      {"input": [{"type": "item_reference", "id": "abc"}]}, {"text": {"format": "bad"}},
                      {"tool_choice": "required"}, {"input": 123}):
             with self.subTest(data=data):
                 code, body = self.post(data)
                 self.assertEqual(code, 400, body)
                 self.assertEqual(body["error"]["type"], "invalid_request_error")
+
+    def test_optional_web_search_does_not_block_json_or_sse(self):
+        self.start()
+        for kind in ("web_search", "web_search_preview", "web_search_preview_2025_03_11"):
+            for stream in (False, True):
+                code, body = self.post({"tools": [{"type": kind}], "stream": stream,
+                                       "instructions": "Keep the original instruction", "metadata": {"task": "test"}})
+                self.assertEqual(code, 200, body)
+                final = body[-1]["response"] if stream else body
+                self.assertEqual(final["status"], "completed")
+                self.assertEqual(final["tools"], [])
+                self.assertEqual(final["metadata"], {"task": "test"})
+                self.assertEqual([i["type"] for i in final["output"]], ["message"])
+                prompt = self.svc.tok.decode(self.engine.last_prompt)
+                self.assertIn("Built-in web search is unavailable", prompt)
+                self.assertIn("Keep the original instruction", prompt)
+
+    def test_search_required_and_unknown_tools_remain_errors(self):
+        self.start()
+        for choice in ("required", {"type": "web_search"}, {"type": "web_search_preview"}):
+            code, body = self.post({"tools": [{"type": "web_search"}], "tool_choice": choice})
+            self.assertEqual(code, 400)
+            self.assertEqual(body["error"]["type"], "invalid_request_error")
+        for tool in ({"type": "unknown_tool"}, {"type": "namespace", "name": "functions", "tools": [{"type": "web_search"}]}):
+            code, body = self.post({"tools": [tool]})
+            self.assertEqual(code, 400)
+            self.assertIn("unsupported tool type", body["error"]["message"])
+
+    def test_search_function_is_still_callable_and_tool_none_disables_it(self):
+        tool = {**FUNCTION, "name": "web_search"}
+        self.start("</think>\n\n" + call("web_search", "cmd", "query"))
+        code, body = self.post({"tools": [{"type": "web_search"}, tool]})
+        self.assertEqual(code, 200, body)
+        self.assertEqual(body["tools"], [tool])
+        self.assertEqual(body["output"][0]["type"], "function_call")
+        self.assertEqual(body["output"][0]["name"], "web_search")
+        chat, names = responses_to_chat({"input": "hello", "tools": [{"type": "web_search"}, tool], "tool_choice": "none"})
+        self.assertEqual(chat["tools"], [])
 
     def test_auth_and_path_normalization(self):
         self.start(api_key="secret")

@@ -13,7 +13,8 @@ import uuid
 
 from serve.frontend import openai_to_messages
 
-LOCAL_VERSION = "v0.1.27-local.1"
+LOCAL_VERSION = "v0.1.27-local.2"
+OPTIONAL_WEB_SEARCH_TYPES = frozenset(("web_search", "web_search_preview", "web_search_preview_2025_03_11"))
 
 
 def _object(value, field):
@@ -60,6 +61,12 @@ def _text(value):
 def _tool_name(name, namespace=None):
     name = _string(name, "tool name")
     return f"{namespace}.{name}" if namespace else name
+
+
+def _client_tools(definitions):
+    """Keep executable client tools; optional OpenAI-hosted search is unavailable."""
+    return [tool for value in _array(definitions, "tools")
+            if (tool := _object(value, "tool")).get("type") not in OPTIONAL_WEB_SEARCH_TYPES]
 
 
 def _tools(definitions):
@@ -114,15 +121,23 @@ def responses_to_chat(req):
     text = _object(req.get("text") or {}, "text")
     if _object(text.get("format") or {}, "text.format").get("type", "text") != "text":
         raise ValueError("structured text.format is unsupported by this compatibility endpoint")
-    tools, names = _tools(req.get("tools") or [])
     choice = req.get("tool_choice", "auto")
+    if isinstance(choice, dict) and choice.get("type") in OPTIONAL_WEB_SEARCH_TYPES:
+        raise ValueError("built-in web search execution is unsupported; use a client-side function/custom search tool")
+    if choice not in ("auto", "none"):
+        raise ValueError("tool_choice supports auto or none; forced tool use is unsupported")
+    definitions = req.get("tools") or []
+    client_tools = _client_tools(definitions)
+    tools, names = _tools(client_tools)
     if choice == "none":
         tools = []
-    elif choice != "auto":
-        raise ValueError("tool_choice supports auto or none; forced tool use is unsupported")
     messages = []
     if req.get("instructions"):
         messages.append({"role": "system", "content": _string(req["instructions"], "instructions")})
+    if len(client_tools) != len(definitions):
+        messages.append({"role": "system", "content":
+            "Built-in web search is unavailable on this local server. Only the supplied client-side tools "
+            "can be called. Do not claim to have searched the web without a successful search tool result."})
     items = req.get("input")
     if isinstance(items, str):
         items = [{"role": "user", "content": items}]
@@ -195,7 +210,7 @@ class ResponseStream:
                          "created_at": int(time.time()), "status": "in_progress", "model": model,
                          "output": self.output, "error": None, "incomplete_details": None, "usage": None,
                          "store": False, "parallel_tool_calls": req.get("parallel_tool_calls", True),
-                         "tools": req.get("tools") or [], "tool_choice": req.get("tool_choice", "auto"),
+                         "tools": _client_tools(req.get("tools") or []), "tool_choice": req.get("tool_choice", "auto"),
                          "instructions": req.get("instructions"), "reasoning": req.get("reasoning"),
                          "max_output_tokens": req.get("max_output_tokens"), "metadata": req.get("metadata") or {}}
 
@@ -348,6 +363,8 @@ class ResponseStream:
 
 def handle_responses(handler, svc, req):
     chat, names = responses_to_chat(req)
+    if len(_client_tools(req.get("tools") or [])) != len(req.get("tools") or []):
+        print("[strata] Responses: optional built-in web search unavailable; continuing with client tools", flush=True)
     chat = svc.with_shared(chat, "openai")
     messages, tools, kwargs = openai_to_messages(chat)
     budget = int(chat.get("max_completion_tokens") or chat.get("max_tokens") or 0)

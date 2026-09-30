@@ -23,6 +23,8 @@ def main():
     ap.add_argument("--codex", default=shutil.which("codex"))
     ap.add_argument("--require-tool-success", action="store_true",
                     help="also require actual shell and apply_patch success (needs a writable Codex sandbox)")
+    ap.add_argument("--web-search", choices=["disabled", "cached", "live"], default="cached",
+                    help="include Codex's built-in search definition to exercise server compatibility")
     args = ap.parse_args()
     if not args.codex:
         ap.error("Codex CLI not found; install it or pass --codex PATH")
@@ -89,7 +91,7 @@ def main():
         "-c", 'model_auto_compact_token_limit_scope=total',
         "-c", 'model_reasoning_effort=medium', "-c", 'plan_mode_reasoning_effort=medium',
         "-c", 'agents.enabled=false',
-        "-c", 'web_search="disabled"',
+        "-c", f'web_search="{args.web_search}"',
         "-c", f"model_catalog_json='{catalog_path.as_posix()}'",
         "-m", svc.model, "--disable", "apps",
         "Run the scripted local protocol test: echo STRATA_SHELL_OK, add responses-smoke.txt containing STRATA_PATCH_OK, and reply STRATA_CODEX_OK."]
@@ -107,7 +109,10 @@ def main():
                    item.get("type") in ("function_call_output", "custom_tool_call_output")]
         (workspace / "tool-results.json").write_text(json.dumps(outputs, ensure_ascii=False, indent=2), encoding="utf-8")
         assert result.returncode == 0, f"Codex exited {result.returncode}; see {workspace}"
-        assert not any(f"Unknown model {svc.model}" in line for line in result.stderr.splitlines()), "deployment model used fallback metadata"
+        assert not any(svc.model in line and ("Unknown model" in line or "Model metadata" in line)
+                       for line in result.stderr.splitlines()), "deployment model used fallback metadata"
+        if args.web_search != "disabled":
+            assert any(t.get("type", "").startswith("web_search") for req in requests for t in req.get("tools", [])), "Codex did not send a search definition"
         assert all(req.get("model") == svc.model for req in requests), "catalog model ID did not reach Strata"
         assert requests[0].get("reasoning", {}).get("effort") == "medium", "medium effort did not reach Strata"
         assert len(requests) >= 3, "Codex did not complete both tool rounds"
