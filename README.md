@@ -1,10 +1,13 @@
 <h1 align="center">Strata</h1>
 
-> **Strata-codex 社区兼容版本**：基于上游 `v0.1.27`，增加可选的
+> **Strata-codex v0.1.27-local.2 社区兼容版本**：基于上游 `v0.1.27`，增加可选的
 > **ModelScope 下载支持**与 **Codex Responses API**。
 > 设置 `STRATA_USE_MODELSCOPE=1` 可启用国内模型源；Codex 命令行启动和兼容范围见
 > [使用说明](docs/LOCAL_FORK.md)，下载源设置见 [ModelScope 说明](docs/LOCAL_MODELSCOPE.md)。
-> 协议与回归测试已通过；真实 GPU 模型、实际工具执行及长任务效果仍需在部署环境验证。
+> GitHub 文件加速可设置 `STRATA_GITHUB_MIRROR=https://gh-proxy.org/`；
+> Responses 接口兼容 Codex 附带的可选内置搜索定义，沿用现有 Codex 启动脚本。
+> 协议与回归测试已通过；部署用户已反馈真实 GPU 模型下 Codex 可正常执行工具。
+> 长任务、压缩质量及全部工具的成功率仍待进一步验证。
 > 上游项目：[Niko1221/Strata](https://github.com/Niko1221/Strata)。下方保留上游介绍。
 
 <p align="center"><b>Run a 125-billion-parameter AI model on a normal gaming PC</b><br>

@@ -47,12 +47,32 @@ top_p 等伪造为模型元数据。原版的研究结果也不自动覆盖 Swif
 
 ```bat
 set "LLM_BASE_URL=http://127.0.0.1:8080/v1"
-python -m tools.codex_catalog --base-url "%LLM_BASE_URL%" --output "logs\codex-models.json"
+.venv\Scripts\python.exe -m tools.codex_catalog --base-url "%LLM_BASE_URL%" --output "logs\codex-models.json"
 ```
 
 工具读取 `/v1/models`，生成一个对应当前模型的条目，并打印 `LLM_MODEL`、
 `LLM_CONTEXT_WINDOW` 和 `LLM_AUTO_COMPACT`。将这些值设置到 CMD 环境变量，
 将 `LLM_MODEL_CATALOG` 设为输出文件的**绝对路径**，再使用 [启动命令](LOCAL_FORK.md#接入-codex)。
+
+上述命令在 Strata 安装目录执行。PowerShell 中环境变量写法为 `$env:LLM_BASE_URL`，
+不能直接使用 CMD 的 `%LLM_BASE_URL%`；对应的生成命令为：
+
+```powershell
+$env:LLM_BASE_URL = "http://127.0.0.1:8080/v1"
+.\.venv\Scripts\python.exe -m tools.codex_catalog --base-url "$env:LLM_BASE_URL" --output "logs\codex-models.json"
+```
+
+生成成功后，在现有 Codex bat 中设置实际绝对路径，并增加加载参数：
+
+```bat
+set "LLM_MODEL_CATALOG=D:\study\AI\Strata\logs\codex-models.json"
+```
+
+```bat
+  -c "model_catalog_json='%LLM_MODEL_CATALOG%'" ^
+```
+
+示例路径需替换为实际安装目录。退出并重启 Codex 才会加载新 catalog。
 
 若要提前规划、更小的客户端上下文或保持已有压缩阈值：
 
@@ -78,8 +98,9 @@ python -m tools.codex_catalog --config "strata-iq3_s.json" --output "logs\codex-
 已验证生成器的模型 ID、上下文上限、视觉开关、推理映射和错误拒绝；
 真实 Codex CLI 0.158.0 加载生成的 Qwen 条目后，通过三轮 HTTP 协议联调，
 没有对选定 Qwen ID 使用 fallback metadata。服务和解析器真实，推理引擎为 MockEngine。
-当前受管环境仍阻止嵌套 Codex 的 shell/patch 写入，真实权重的工具成功率、
-长任务及本地压缩质量没有验证。这是一份有来源依据的适配配置，不是效果保证。
+2026-10-01 部署用户成功生成 IQ3_S / 65536 / text,image 的 catalog，
+并反馈真实模型下 Codex 可正常执行工具。该反馈与 MockEngine 协议测试分开记录；
+真实权重的工具成功率、长任务及本地压缩质量尚未做系统测试。
 
 若仍有 `Unknown model ...`，先检查警告中的具体 ID 是否等于本次 `LLM_MODEL`。
 测试环境还可能出现其他内部模型 ID 的 warning；不要伪造同名条目来隐藏它。
