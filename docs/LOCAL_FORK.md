@@ -16,22 +16,60 @@
 ## 接入 Codex
 
 先按现有流程启动真实 Strata 模型，确认 `http://127.0.0.1:8080/health` 正常。
-将 [codex-strata.config.toml](codex-strata.config.toml) 复制为
-`$CODEX_HOME/strata.config.toml`（默认 `$HOME/.codex/strata.config.toml`），运行：
+使用 Windows **CMD** 的环境变量和 `codex -c ...` 参数启动，无需创建 TOML
+配置文件或 profile。以下设置是本次启动的命令行覆盖，不写入 Codex 全局配置。
+先在同一个 CMD 窗口设置变量；示例上下文需按真实引擎容量调整：
 
-```powershell
-codex --profile strata
+```bat
+set "LLM_BASE_URL=http://127.0.0.1:8080/v1"
+set "LLM_MODEL=strata-local"
+set "LLM_CONTEXT_WINDOW=32768"
+set "LLM_AUTO_COMPACT=24000"
+set "LLM_REASONING=medium"
+set "LLM_PLAN_REASONING=medium"
+set "LLM_MODEL_CATALOG=F:\Tmp\Strata\docs\codex-models.json"
 ```
 
-示例按 Codex CLI 0.158.0 的独立 profile 文件格式验证。
-保留你自己的权限、审批和插件设置；本补丁不会修改 Codex 全局配置。
-需要调整的项目：
+将 `LLM_MODEL_CATALOG` 改为 [codex-models.json](codex-models.json) 的实际绝对路径。
+`LAN_API_KEY` 设置为 Strata 启动时的 API key；服务未设置 API key 时，
+可以在 CMD 中用 `set "LAN_API_KEY=strata-local"` 提供占位值。
+不要将真实密钥写入公开脚本或仓库。
+
+```bat
+codex ^
+  -c model_provider=lan ^
+  -c "model_providers.lan.name=LAN" ^
+  -c "model_providers.lan.base_url=%LLM_BASE_URL%" ^
+  -c "model_providers.lan.env_key=LAN_API_KEY" ^
+  -c "model_providers.lan.requires_openai_auth=false" ^
+  -c "model_providers.lan.wire_api=responses" ^
+  -c "model_providers.lan.supports_websockets=false" ^
+  -c "model_providers.lan.stream_idle_timeout_ms=1800000" ^
+  -c "model_context_window=%LLM_CONTEXT_WINDOW%" ^
+  -c "model_auto_compact_token_limit=%LLM_AUTO_COMPACT%" ^
+  -c "model_auto_compact_token_limit_scope=total" ^
+  -c "model_reasoning_effort=%LLM_REASONING%" ^
+  -c "plan_mode_reasoning_effort=%LLM_PLAN_REASONING%" ^
+  -c "agents.enabled=false" ^
+  -c "web_search=disabled" ^
+  -c "model_catalog_json='%LLM_MODEL_CATALOG%'" ^
+  -m "%LLM_MODEL%" ^
+  --sandbox danger-full-access ^
+  --ask-for-approval never ^
+  --disable apps
+```
+
+`^` 是 CMD 的续行符，后面不能有空格；`%变量%` 同样是 CMD 语法。
+可将命令保存为本机 `.cmd` 或 `.bat`，在需要操作的项目目录运行。
+示例保留 `danger-full-access`、不请求审批、禁用 apps 的启动偏好。
+需要调整或了解的项目：
 
 - `base_url` 指向实际 Strata 的 `/v1`；`wire_api="responses"`。
 - 关闭 WebSocket；本实现提供 HTTP SSE。
 - `web_search="disabled"`：Strata 不执行 OpenAI 云端搜索工具。
-- `model_catalog_json` 使用 [codex-models.json](codex-models.json) 的绝对路径。
+- `model_catalog_json` 通过 `-c` 指定 JSON 文件，不需要 TOML 配置文件。
   `strata-local` 是客户端别名，服务端始终调用当前已加载的模型。
+  若使用其他 `LLM_MODEL` 名称，需将 catalog 中的 `slug` 改为同名。
   Catalog 为本地模型提供 `apply_patch_tool_type="freeform"`，避免未知模型的
   Codex fallback metadata 不提供自定义 `apply_patch`。
 - Catalog 含一段简短的本地编码助手指令，可按需要调整 `base_instructions`。
@@ -39,9 +77,10 @@ codex --profile strata
 - `model_context_window` 和 catalog 的 `context_window` 不得超过真实引擎设置。
   默认示例为 32768，提前在 24000 tokens 压缩，给下一次回复留出空间。
   若启用视觉，应将 catalog 的 `input_modalities` 加入 `image`。
-- Strata 有 API key 时启用 `env_key="STRATA_API_KEY"` 并设置对应环境变量。
+- `env_key=LAN_API_KEY` 对应同名环境变量；其值通过 Bearer 认证发送。
 
-Codex provider/profile 设置见 [官方配置参考](https://developers.openai.com/codex/config-reference/)。
+命令行覆盖见 [官方高级配置](https://learn.chatgpt.com/docs/config-file/config-advanced)，
+参数含义见 [官方配置参考](https://developers.openai.com/codex/config-reference/)。
 不同 Codex 版本的 catalog 字段可能变化，更新 CLI 后可先运行下面的 smoke test。
 
 ## 支持范围
@@ -92,13 +131,14 @@ python -m serve.codex_smoke --require-tool-success
 MockEngine 覆盖协议及原有推理前端，无需 GPU。
 Smoke test 启动真实 Strata HTTP 层，使用脚本化引擎，由安装的真实 Codex CLI
 消费 SSE，执行函数工具、自定义 apply_patch，并回传工具结果到下一轮。
-其隔离配置、标记文件和诊断保存在 `logs/codex-smoke/`，不访问真实 Codex 凭据。
+测试同样使用 `-c` 定义 LAN provider 和 catalog，不使用 profile。
+其隔离运行目录、标记文件和诊断保存在 `logs/codex-smoke/`，不访问真实 Codex 凭据。
 默认区分协议成功与实际工具执行成功；只读沙箱下工具错误回传也能验证多轮协议。
 目前协议链路已验证，当前受管运行环境阻止嵌套 Codex 的实际 shell/patch 执行；
 真实 GPU 模型的工具选择质量、真实工具执行与长任务压缩还需要在实际部署环境验证。
 
 本次最终回归：80 项，OK（3 项依上游条件跳过）；`git diff --check` 与 Python
-语法编译通过。实际 profile 文件及 catalog 已由 Codex CLI 0.158.0 加载验证，
+语法编译通过。命令行 provider 参数及 catalog 已由 Codex CLI 0.158.0 加载验证，
 三轮 HTTP 协议 smoke test 通过。
 
 ModelScope 已核验四个同名仓库及主要文件地址，并实际读取 Qwen safetensors 索引和

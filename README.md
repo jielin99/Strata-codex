@@ -2,7 +2,7 @@
 
 > **Strata-codex 社区兼容版本**：基于上游 `v0.1.27`，增加可选的
 > **ModelScope 下载支持**与 **Codex Responses API**。
-> 设置 `STRATA_USE_MODELSCOPE=1` 可启用国内模型源；Codex 配置和兼容范围见
+> 设置 `STRATA_USE_MODELSCOPE=1` 可启用国内模型源；Codex 命令行启动和兼容范围见
 > [使用说明](docs/LOCAL_FORK.md)，下载源设置见 [ModelScope 说明](docs/LOCAL_MODELSCOPE.md)。
 > 协议与回归测试已通过；真实 GPU 模型、实际工具执行及长任务效果仍需在部署环境验证。
 > 上游项目：[Niko1221/Strata](https://github.com/Niko1221/Strata)。下方保留上游介绍。

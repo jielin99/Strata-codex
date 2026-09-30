@@ -37,6 +37,7 @@ def main():
     engine = MockEngine(tok, ["</think>\n\n" + shell, "</think>\n\n" + patch,
                               "</think>\n\nSTRATA_CODEX_OK"], max_context=262144)
     svc = Service(engine, tok, ChatTemplate(ROOT / "serve/chat_template.jinja"))
+    svc.api_key = "strata-smoke-test"
     requests = []
     base_handler = make_handler(svc)
 
@@ -66,21 +67,30 @@ def main():
 
     httpd = Server(("127.0.0.1", 0), RecordingHandler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    profile = (ROOT / "docs/codex-strata.config.toml").read_text(encoding="utf-8")
-    profile = profile.replace("http://127.0.0.1:8080/v1", f"http://127.0.0.1:{httpd.server_address[1]}/v1")
-    profile = profile.replace("F:/Tmp/Strata/docs/codex-models.json", (ROOT / "docs/codex-models.json").as_posix())
-    (cli_home / "strata.config.toml").write_text(profile, encoding="utf-8")
     command = [args.codex, "exec", "--ignore-rules", "--ephemeral", "--skip-git-repo-check",
-        "--profile", "strata", "--sandbox", "workspace-write", "--cd", str(workspace), "--json",
+        "--ignore-user-config", "--sandbox", "workspace-write", "--cd", str(workspace), "--json",
         "-c", 'approval_policy="never"',
-        "-c", 'model_providers.strata.request_max_retries=0',
-        "-c", 'model_providers.strata.stream_max_retries=0',
+        "-c", 'model_provider=lan',
+        "-c", 'model_providers.lan.name=LAN',
+        "-c", f'model_providers.lan.base_url=http://127.0.0.1:{httpd.server_address[1]}/v1',
+        "-c", 'model_providers.lan.env_key=LAN_API_KEY',
+        "-c", 'model_providers.lan.requires_openai_auth=false',
+        "-c", 'model_providers.lan.wire_api=responses',
+        "-c", 'model_providers.lan.supports_websockets=false',
+        "-c", 'model_providers.lan.stream_idle_timeout_ms=1800000',
+        "-c", 'model_providers.lan.request_max_retries=0',
+        "-c", 'model_providers.lan.stream_max_retries=0',
         "-c", 'model_context_window=65536', "-c", 'model_auto_compact_token_limit=60000',
+        "-c", 'model_auto_compact_token_limit_scope=total',
+        "-c", 'model_reasoning_effort=medium', "-c", 'plan_mode_reasoning_effort=medium',
+        "-c", 'agents.enabled=false',
         "-c", 'web_search="disabled"',
+        "-c", f"model_catalog_json='{(ROOT / 'docs/codex-models.json').as_posix()}'",
+        "-m", "strata-local", "--disable", "apps",
         "Run the scripted local protocol test: echo STRATA_SHELL_OK, add responses-smoke.txt containing STRATA_PATCH_OK, and reply STRATA_CODEX_OK."]
     # Isolated home prevents smoke tests from reading user credentials/plugins or
     # changing their real configuration. The provider talks only to loopback.
-    env = dict(os.environ, CODEX_HOME=str(cli_home))
+    env = dict(os.environ, CODEX_HOME=str(cli_home), LAN_API_KEY=svc.api_key)
     try:
         result = subprocess.run(command, env=env, capture_output=True, text=True, encoding="utf-8", timeout=90)
         (workspace / "stdout.jsonl").write_text(result.stdout, encoding="utf-8")
