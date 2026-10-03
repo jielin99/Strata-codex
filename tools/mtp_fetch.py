@@ -24,6 +24,7 @@ import struct
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 try:
@@ -162,10 +163,14 @@ def resolve_repo():
     """REPO, or the repository's current files when the pinned revision is gone from it (a 404 on its index)."""
     global REPO
     try:
-        req = urllib.request.Request(REPO + "model.safetensors.index.json", method="HEAD",
+        source = model_url(REPO + "model.safetensors.index.json")
+        req = urllib.request.Request(source, method="HEAD",
                                      headers={"User-Agent": "strata-mtp-fetch"})
         urllib.request.urlopen(req, timeout=120).close()
     except urllib.error.HTTPError as e:
+        if urllib.parse.urlsplit(source).hostname == "modelscope.cn":
+            # A source's missing revision must not switch off the checkpoint's hashes.
+            raise
         if e.code == 404 and "/resolve/main/" not in REPO:
             print("the checkpoint's pinned revision %s is gone: reading its current files (main)" % REVISION,
                   file=sys.stderr)

@@ -57,7 +57,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from tools.model_source import model_url
+from tools.model_source import model_url, model_fallback_url
 
 ROOT = Path(__file__).resolve().parent
 WIN = os.name == "nt"
@@ -87,8 +87,8 @@ def hf(repo: str) -> str:
 
 
 def hf_unpinned(url: str) -> str:
-    """The same file at the repository's current revision (main)."""
-    return re.sub(r"^(https?://[^/]+/.+?/resolve/)[0-9a-f]{40}/", r"\1main/", url, count=1)
+    """HF's main fallback, keeping an explicitly selected ModelScope revision unchanged."""
+    return model_fallback_url(url)
 
 
 HF = hf("ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF")
