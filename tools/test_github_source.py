@@ -53,11 +53,21 @@ class GithubSourceTests(unittest.TestCase):
             self.assertEqual(len(seen), 2)  # completed files never contact the mirror
 
     def test_prebuilt_availability_probe_uses_mirror(self):
-        with tempfile.TemporaryDirectory() as folder, patch.object(setup, "ROOT", Path(folder)), patch.dict(os.environ, {
+        with tempfile.TemporaryDirectory() as folder, patch.object(setup, "ROOT", Path(folder)), \
+                patch.object(setup, "source_version", return_value="0.1.38"), patch.dict(os.environ, {
                 "STRATA_GITHUB_MIRROR": "https://mirror.example/"}), patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")) as request:
             self.assertIsNone(setup.get_prebuilt(setup.PREBUILT_URL, {"arch": 89}, "none"))
             self.assertEqual(request.call_args.args[0].full_url,
                              "https://mirror.example/" + setup.PREBUILT_URL + setup.PREBUILT_ASSET)
+
+    def test_hip_probe_uses_fixed_tag_and_mirror(self):
+        base = "https://github.com/Niko1221/Strata/releases/download/v0.1.38/"
+        with tempfile.TemporaryDirectory() as folder, patch.object(setup, "ROOT", Path(folder)), \
+                patch.dict(os.environ, {"STRATA_GITHUB_MIRROR": "https://mirror.example/"}, clear=True), \
+                patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")) as request:
+            self.assertIsNone(setup.get_prebuilt_hip(base, {"arch": "gfx1201"}))
+            self.assertEqual(request.call_args.args[0].full_url,
+                             "https://mirror.example/" + base + setup.WIN_HIP_ASSET)
 
 
 if __name__ == "__main__":

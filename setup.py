@@ -2008,7 +2008,7 @@ def get_prebuilt_hip(url_base, gpu, updating=False) -> Path | None:
         if not base.startswith(("http://", "https://")):
             break
         try:
-            req = urllib.request.Request(base + WIN_HIP_ASSET, method="HEAD", headers={"User-Agent": "strata-setup"})
+            req = urllib.request.Request(github_url(base + WIN_HIP_ASSET), method="HEAD", headers={"User-Agent": "strata-setup"})
             urllib.request.urlopen(req, timeout=60).close()
             break
         except OSError as e:
