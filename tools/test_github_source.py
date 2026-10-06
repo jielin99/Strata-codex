@@ -54,20 +54,50 @@ class GithubSourceTests(unittest.TestCase):
 
     def test_prebuilt_availability_probe_uses_mirror(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(setup, "ROOT", Path(folder)), \
-                patch.object(setup, "source_version", return_value="0.1.38"), patch.dict(os.environ, {
+                patch.object(setup, "source_version", return_value="0.1.40"), patch.dict(os.environ, {
                 "STRATA_GITHUB_MIRROR": "https://mirror.example/"}), patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")) as request:
             self.assertIsNone(setup.get_prebuilt(setup.PREBUILT_URL, {"arch": 89}, "none"))
             self.assertEqual(request.call_args.args[0].full_url,
                              "https://mirror.example/" + setup.PREBUILT_URL + setup.PREBUILT_ASSET)
 
     def test_hip_probe_uses_fixed_tag_and_mirror(self):
-        base = "https://github.com/Niko1221/Strata/releases/download/v0.1.38/"
+        base = "https://github.com/Niko1221/Strata/releases/download/v0.1.40/"
         with tempfile.TemporaryDirectory() as folder, patch.object(setup, "ROOT", Path(folder)), \
                 patch.dict(os.environ, {"STRATA_GITHUB_MIRROR": "https://mirror.example/"}, clear=True), \
                 patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")) as request:
             self.assertIsNone(setup.get_prebuilt_hip(base, {"arch": "gfx1201"}))
             self.assertEqual(request.call_args.args[0].full_url,
                              "https://mirror.example/" + base + setup.WIN_HIP_ASSET)
+
+    def test_cuda12_probe_keeps_the_selected_asset_and_tag_fallback(self):
+        base = "https://github.com/Niko1221/Strata/releases/download/v0.1.40/"
+        for toolkit, asset in ((12, setup.CUDA12_ASSET), (13, setup.PREBUILT_ASSET)):
+            with self.subTest(toolkit=toolkit), tempfile.TemporaryDirectory() as folder, \
+                    patch.object(setup, "ROOT", Path(folder)), \
+                    patch.object(setup, "source_version", return_value="0.1.40"), \
+                    patch.dict(os.environ, {"STRATA_GITHUB_MIRROR": "https://mirror.example/"}, clear=True), \
+                    patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")) as request:
+                self.assertIsNone(setup.get_prebuilt(setup.PREBUILT_URL, {"arch": 89}, "none", toolkit=toolkit))
+                self.assertEqual([entry.args[0].full_url for entry in request.call_args_list],
+                                 ["https://mirror.example/" + prefix + asset
+                                  for prefix in (base, setup.PREBUILT_URL)])
+
+    def test_source_and_engine_assets_keep_their_paths_during_download(self):
+        class Response(io.BytesIO):
+            status = 200
+            headers = {"Content-Length": "3"}
+        base = "https://github.com/Niko1221/Strata/releases/download/v0.1.40/"
+        for url in (base + setup.PREBUILT_ASSET, base + setup.CUDA12_ASSET,
+                    base + setup.WIN_HIP_ASSET, setup.LLAMA_CPP_ZIP):
+            with self.subTest(url=url), tempfile.TemporaryDirectory() as folder, \
+                    patch.dict(os.environ, {"STRATA_GITHUB_MIRROR": "https://mirror.example/"}, clear=True), \
+                    patch("urllib.request.urlopen", side_effect=lambda *a, **k: Response(b"zip")) as request:
+                dest = Path(folder) / "asset.zip"
+                setup.download(url, dest)
+                self.assertEqual(dest.read_bytes(), b"zip")
+                self.assertEqual([entry.args[0].get_method() for entry in request.call_args_list], ["HEAD", "GET"])
+                self.assertTrue(all(entry.args[0].full_url == "https://mirror.example/" + url
+                                    for entry in request.call_args_list))
 
 
 if __name__ == "__main__":
