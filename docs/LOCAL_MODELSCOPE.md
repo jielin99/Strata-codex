@@ -1,86 +1,77 @@
-# ModelScope 本地补丁
+# ModelScope 和 GitHub 下载源
 
-默认下载行为仍为 Hugging Face。PowerShell 启用：
+此候选基于上游 v0.1.40.1，只增加两种可选下载适配。默认仍使用上游的模型和文件来源。
+服务接口、推理引擎与功能配置使用上游实现。验证范围见 [候选说明](CANDIDATE_v0.1.40.1.md)。
 
-```powershell
-$env:STRATA_USE_MODELSCOPE = "1"
-./START-HERE.bat
-```
+## CMD 中启用
 
-Linux/macOS：`STRATA_USE_MODELSCOPE=1 ./setup.sh`。
-同一开关覆盖 setup 的模型 GGUF、视觉 mmproj 和 MTP 权重及索引下载。
-GitHub、CUDA、pip 下载不受此开关影响。
-
-## GitHub 文件下载加速
-
-GitHub 引擎 ZIP 和 llama.cpp 源码 ZIP 可以单独设置下载加速前缀。
-与 ModelScope 开关一起使用（PowerShell）：
-
-```powershell
-$env:STRATA_USE_MODELSCOPE = "1"
-$env:STRATA_GITHUB_MIRROR = "https://gh-proxy.org/"
-./START-HERE.bat --setup --host 0.0.0.0
-```
-
-CMD：
-
-```bat
+```cmd
 set "STRATA_USE_MODELSCOPE=1"
 set "STRATA_GITHUB_MIRROR=https://gh-proxy.org/"
-START-HERE.bat --setup --host 0.0.0.0
+set "STRATA_PREBUILT_URL=https://github.com/Niko1221/Strata/releases/download/v0.1.40/"
+START-HERE.bat
 ```
 
-这是 URL 前缀加速：例如
-`https://github.com/Niko1221/Strata/releases/latest/download/strata-windows-x64.zip`
-变为
-`https://gh-proxy.org/https://github.com/Niko1221/Strata/releases/latest/download/strata-windows-x64.zip`。
-前缀规则见 [GH-Proxy 自有说明](https://gh-proxy.com/docs/github-accelerator)。
-也可换成支持相同规则的 `https://gh-proxy.com/` 或 `https://ghfast.top/`。
-不填写完整 GitHub 文件地址，不设置 SOCKS/系统代理，也不修改 Git 全局配置。
-未设置时仍直连；自定义 `STRATA_PREBUILT_URL` 的 GitHub 地址同样生效，已加速的
-地址和本地文件不重复处理。下载前的引擎 HEAD 探测、下载和断点续传共用这个入口。
+可分别启用两项功能。上面的 GitHub 前缀是示例，需使用部署网络可访问且支持这种规则的服务。
+现有模型文件可按上游流程复用；下载成功不等于模型/引擎版本或镜像字节已经核验。
 
-2026-10-01 检查：上述三个前缀均返回选定 `v0.1.27` 引擎和固定 commit
-llama.cpp 源码 ZIP 的前 8 字节；`gh-proxy.org` / `gh-proxy.com` 对两者
-返回 HTTP 206 和正确 Content-Range。仅验证小范围读取，没有完整文件哈希或
-中国大陆网络吞吐测试；这些是第三方加速服务，速度和可用性以部署网络为准。
-pip/CUDA 包、Python 安装和 git clone/pull 不由这个变量加速。
+关闭时在 CMD 设置空值：
 
-若还需要下载本社区仓库代码，可手动使用加速地址克隆指定版本分支：
-
-```powershell
-git clone --branch local-v0.1.27 https://gh-proxy.org/https://github.com/jielin99/Strata-codex.git Strata
-git -C Strata remote set-url origin https://github.com/jielin99/Strata-codex.git
+```cmd
+set "STRATA_USE_MODELSCOPE="
+set "STRATA_GITHUB_MIRROR="
 ```
 
-这只通过加速站读取公开仓库，随后恢复正常 origin 地址。已有仓库可以只对
-一次 fetch 加速，随后正常合并这次取回的分支：
+Linux 同样使用对应环境变量，例如 `STRATA_USE_MODELSCOPE=1 ./setup.sh`。
 
-```powershell
-git -c 'url.https://gh-proxy.org/https://github.com/.insteadOf=https://github.com/' fetch origin local-v0.1.27
-git merge --ff-only origin/local-v0.1.27
+## ModelScope 模型下载
+
+`STRATA_USE_MODELSCOPE=1` 覆盖模型 GGUF、视觉 mmproj、MTP checkpoint 索引和 tensor Range。
+适配器保留代码中的逻辑 HF URL，只在网络入口换源。
+
+默认使用同名 ModelScope 仓库，将 HF main 和 40 位 commit hash 映射为源的 master；
+两个平台的 commit ID 不假定互通，其他具名 revision 默认保留。
+ModelScope 仓库不同或需要固定该源自己的 revision 时，在 CMD 使用 JSON 映射：
+
+```cmd
+set "STRATA_MODELSCOPE_REPOS={"ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF":"your-org/your-mirror"}"
+set "STRATA_MODELSCOPE_REVISIONS={"ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF":"MODEL_SCOPE_COMMIT"}"
 ```
 
-前提是 origin 已指向本社区仓库，当前就在对应版本分支且没有需要保留的未提交修改。
-这些命令不改全局 Git 配置；下载加速也不会更换所选版本。
+将示例值换成源仓库实际存在的名称和 revision。MTP 与视觉需要固定时分别添加对应原 HF 仓库名。
+需要固定 ModelScope revision 不要求设置仓库重映射。
 
-关闭：PowerShell `Remove-Item Env:STRATA_GITHUB_MIRROR`；CMD
-`set "STRATA_GITHUB_MIRROR="`。更换前缀后重试；已经下载完成的文件继续跳过。
-测试：`python -m unittest tools.test_github_source -v`。
+同时设置 ModelScope 开关与 HF_ENDPOINT 时，ModelScope 优先，适配器识别配置的 endpoint
+及其路径前缀；不启用时保持上游 HF_ENDPOINT 行为。
+HEAD、GET 和 Range 使用相同源，MTP 仍检查 HTTP 206、Content-Range 和固定 checkpoint 的
+已知 SHA256。源 404 不切换 logical checkpoint 以关闭校验，不自动回到 HF 下载。
+Range 响应忽略边界时拒绝读取整个权重分片。
 
-## 仓库映射
+源仓库必须包含同路径、同字节的模型文件，尤其 MTP offsets 来自 checkpoint。
+普通模型文件继续使用上游完整性规则，不能仅凭 master 或下载完成证明与 HF 固定版本一致。
+更换为不同内容的模型/源时使用独立目录，避免沿用已完成标记。
 
-使用同名 ModelScope 仓库，将 Hugging Face `main` 映射到 ModelScope `master`。
-如果镜像仓库不同，可设置 JSON 映射（Hugging Face repo → ModelScope repo）：
+## GitHub 文件加速
 
-```powershell
-$env:STRATA_MODELSCOPE_REPOS = '{"ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF":"your-org/your-mirror"}'
+`STRATA_GITHUB_MIRROR` 是 HTTPS URL 前缀。例如：
+
+`https://github.com/Niko1221/Strata/releases/download/v0.1.40/strata-windows-x64.zip`
+
+变为：
+
+`https://gh-proxy.org/https://github.com/Niko1221/Strata/releases/download/v0.1.40/strata-windows-x64.zip`
+
+它覆盖 GitHub 引擎 ZIP 与 llama.cpp 源码 ZIP 的 HEAD、GET 和断点续传，保留 NVIDIA CUDA13、
+CUDA12 和 AMD HIP 的原生资产选择。自定义 STRATA_PREBUILT_URL 的 GitHub 地址同样适用。
+本地路径、非 GitHub 地址和已经加速的 URL 不重复处理。
+
+变量不代理 git clone/pull，也不改变系统或 Git 全局代理，不加速 Python、CUDA 或 PyPI 包。
+GitHub mirror 与 ModelScope 独立，不能用其中一个代替另一项。
+
+## 回归检查
+
+```cmd
+python -m unittest tools.test_model_source tools.test_github_source tools.test_mtp_fetch tools.test_setup_pins tools.test_setup_hotfix_tag
 ```
 
-镜像必须包含同路径、同字节内容的文件，尤其 MTP 会复用已保存的 tensor byte offsets。
-不自动回退到 Hugging Face；源错误会沿用现有下载错误提示。
-已完成的下载保持现有跳过行为；切换到不同内容的仓库时应使用新模型/MTP目录。
-MTP 对 Range 响应检查 HTTP 206 和 Content-Range，避免镜像忽略 Range 时下载整个权重分片。
-
-适配集中在 `tools/model_source.py`，上游只需保留 setup 下载入口和 MTP get 入口的各一处调用。
-验证：`python -m unittest tools.test_model_source -v`。
+真实部署还应核验完整文件、MTP tensor 哈希、BUILD.json 和模型来源。

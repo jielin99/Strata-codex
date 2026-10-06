@@ -1,5 +1,13 @@
 <h1 align="center">Strata</h1>
 
+> **Strata-codex v0.1.40.1-local.1-candidate，待真机验证**：从上游正式 tag `v0.1.40.1`
+> 建立，只增加可选的 ModelScope 模型下载和 GitHub 文件加速。
+> Responses、工具解析、监控、安全检查及推理引擎使用上游原生实现。
+> 下载设置见 [下载源说明](docs/LOCAL_MODELSCOPE.md)，测试范围与验收步骤见
+> [候选说明](docs/CANDIDATE_v0.1.40.1.md)。此候选尚未发布，GPU 和真实模型工具执行仍待验证。
+> 需要两项下载适配时使用本社区版本的源码；下方安装与功能说明沿用上游。
+> 社区仓库：[jielin99/Strata-codex](https://github.com/jielin99/Strata-codex)。
+
 **English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt-BR.md)
 
 <p align="center"><b>Run a 125-billion-parameter AI model on your own gaming PC</b><br>
