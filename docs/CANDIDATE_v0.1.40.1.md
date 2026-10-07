@@ -1,15 +1,17 @@
-# v0.1.40.1 本地候选版 待真机验证
+# v0.1.40.1 本地优化版
 
-版本标识 `v0.1.40.1-local.1-candidate`，基础为上游正式 tag
+版本标识 `v0.1.40.1-local.1`，基础为上游正式 tag
 [`v0.1.40.1`](https://github.com/Niko1221/Strata/releases/tag/v0.1.40.1)，
 commit `82f46a8c8f475f001ad76d92f58f4a4f8ffb0253`。
-候选分支 `local-v0.1.40.1`，尚未发布。
+版本分支 `local-v0.1.40.1`。
 
 ## 功能范围
 
-只保留 ModelScope 与 GitHub 文件加速两个可选下载功能，设置方式见
-[下载源说明](LOCAL_MODELSCOPE.md)。没有迁移旧版 Responses 实现、catalog 生成器、
-自定义服务版本提示或旧 Codex 协议补丁。服务、模板、引擎、依赖清单和功能配置使用上游。
+保留 ModelScope 与 GitHub 文件加速两个可选下载功能，设置方式见
+[下载源说明](LOCAL_MODELSCOPE.md)。2026-10-07 在原生 Responses 上新增
+[JSON 与工具共存修订](RESPONSES_STRUCTURED_TOOLS.md)，并将 JSON Schema 校验依赖加入安装清单。
+没有迁移旧版 Responses 实现、catalog 生成器、自定义服务版本提示或旧 Codex 协议补丁。
+模板、推理引擎和功能配置仍沿用上游。
 用户已有的客户端配置独立于这些源码补丁，部署后应按实际模型 ID、上下文和视觉能力核对。
 
 v0.1.40.1 是 Python 服务热修订，使用 0.1.40 引擎；CMake 的 0.1.40 版本标记保持上游原值。
@@ -23,6 +25,11 @@ set "STRATA_PREBUILT_URL=https://github.com/Niko1221/Strata/releases/download/v0
 资产选择、版本判断及显式来源规则，不固定成旧版 NVIDIA 包。
 
 ## 本地验证
+
+用户于 2026-10-07 反馈原候选真机测试没有大问题，发现自动审批请求的 JSON 与工具组合被拒绝。
+随后用户应用本次 Responses 修订并反馈真机测试成功。本版本据此发布；该反馈不扩展为全部工具、
+所有审批场景、长任务或性能指标均已验证。下表保留修订前的本地基线结果；修订测试见
+[Responses 兼容说明](RESPONSES_STRUCTURED_TOOLS.md)。
 
 验证日期 2026-10-06，Windows、Python 3.14.3、Codex CLI 0.158.0。
 

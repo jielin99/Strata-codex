@@ -1,10 +1,11 @@
 <h1 align="center">Strata</h1>
 
-> **Strata-codex v0.1.40.1-local.1-candidate，待真机验证**：从上游正式 tag `v0.1.40.1`
-> 建立，只增加可选的 ModelScope 模型下载和 GitHub 文件加速。
-> Responses、工具解析、监控、安全检查及推理引擎使用上游原生实现。
+> **Strata-codex v0.1.40.1-local.1，已收到真机验证通过反馈**：从上游正式 tag `v0.1.40.1`
+> 建立，保留可选的 ModelScope 模型下载和 GitHub 文件加速，并在原生 Responses 上补齐
+> JSON 输出格式与客户端工具共存的兼容性；没有恢复旧版 Responses 实现。
 > 下载设置见 [下载源说明](docs/LOCAL_MODELSCOPE.md)，测试范围与验收步骤见
-> [候选说明](docs/CANDIDATE_v0.1.40.1.md)。此候选尚未发布，GPU 和真实模型工具执行仍待验证。
+> [版本说明](docs/CANDIDATE_v0.1.40.1.md)及 [Responses 兼容说明](docs/RESPONSES_STRUCTURED_TOOLS.md)。
+> 用户反馈原版本与本次 Responses 兼容修订真机测试成功；验证范围和已知限制见上述说明。
 > 需要两项下载适配时使用本社区版本的源码；下方安装与功能说明沿用上游。
 > 社区仓库：[jielin99/Strata-codex](https://github.com/jielin99/Strata-codex)。
 
