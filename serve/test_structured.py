@@ -147,12 +147,13 @@ class Structured(unittest.TestCase):
             load.assert_not_called()
 
     def test_without_jsonschema_an_object_is_still_required(self):
-        # jsonschema is optional: without it json_schema answers are checked to be one JSON object, json_object
-        # never needs it, and nothing is imported at server start
+        # Older installs retain the non-strict fallback; strict requests must not silently lose validation.
         with mock.patch.object(structured, "_jsonschema", False):
-            self.assertEqual(self.chat()[0], 200)
+            self.assertEqual(self.chat()[0], 400)
+            fmt = {**FORMAT, "json_schema": {**FORMAT["json_schema"], "strict": False}}
+            self.assertEqual(self.chat(response_format=fmt)[0], 200)
             for script in ("## Film Plan - Photobooth", "[1, 2]"):
-                code, reply = self.chat(script)
+                code, reply = self.chat(script, response_format=fmt)
                 self.assertEqual(code, 502, script)
                 self.assertEqual(reply["error"]["code"], "structured_output_failed")
             self.assertEqual(self.chat('{"answer":4}', response_format={"type": "json_object"})[0], 200)

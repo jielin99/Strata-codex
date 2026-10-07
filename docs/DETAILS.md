@@ -1318,15 +1318,17 @@ The schema must accept only JSON objects at its root: `"type":"object"`, or an `
 object schemas (an `allOf` with an object member, or a local `$ref` to one, also counts), as apps written for
 llama.cpp's `json_schema` send. A root that also allows an array, string, number, boolean or null is refused. Local
 `#` references work; remote references are refused.
-`json_schema` is checked with the Python package `jsonschema` when it is installed (`python -m pip install
-"jsonschema>=4.23,<5"`; setup does not add it); without it the answer is only checked to be one JSON object, and the
-server says so once.
+`json_schema` is checked with the Python package `jsonschema`, installed by setup. Older installations can add it
+with `python -m pip install "jsonschema==4.26.0"`. Without it, `strict: true` requests are rejected before generation;
+only non-strict requests retain the object-only fallback, with a warning.
 
 This is **schema prompting followed by server validation**, not grammar-constrained decoding. One generation
 is made per request, with no hidden retry. Successful responses contain a validated JSON object. Malformed JSON,
 duplicate keys, non-finite numbers, schema violations and incomplete generations return **502** with
 `error.code: structured_output_failed`; invalid request schemas return **400**. JSON formats combined with
-tools/MCP are refused explicitly. Without `response_format`, ordinary text and tool behavior stays the same.
+tools/MCP on Chat Completions are refused explicitly. Responses supports JSON text formats with client tools;
+see [Responses structured text and tools](RESPONSES_STRUCTURED_TOOLS.md). Without `response_format`, ordinary
+Chat Completions text and tool behavior stays the same.
 
 Structured SSE buffers the answer while sending keep-alive comments. It emits content only after validation,
 then usage/timings and `[DONE]`; failures emit an SSE error and `[DONE]` without invalid content deltas.

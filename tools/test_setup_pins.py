@@ -298,7 +298,8 @@ class Requirements(unittest.TestCase):
     def test_an_install_from_before_the_pins_is_left_alone(self):
         lines = setup.requirement_lines()
         legacy = sorted(setup.PY_PACKAGES) + ["nvidia-cublas==13.0.2.14"]
-        deps = {"markupsafe", "certifi", "charset-normalizer", "idna", "urllib3", "colorama"}
+        deps = {"markupsafe", "certifi", "charset-normalizer", "idna", "urllib3", "colorama", "jsonschema",
+                "attrs", "jsonschema-specifications", "referencing", "rpds-py", "typing-extensions"}
         self.assertEqual(self.pip(legacy, lines, installed=deps)[0], [])
         missing = [p for p in legacy if p != "psutil"]                         # an older list without psutil
         ran, _ = self.pip(missing, lines, installed=deps)
@@ -309,6 +310,14 @@ class Requirements(unittest.TestCase):
         old = [x.replace("tqdm==4.70.1", "tqdm==4.60.0") for x in lines]
         ran, _ = self.pip(old, lines)
         self.assertEqual(ran, ["tqdm==4.70.1"])
+
+    def test_existing_install_adds_schema_validation_dependencies(self):
+        lines = setup.requirement_lines()
+        added = {"jsonschema", "attrs", "jsonschema-specifications", "referencing", "rpds-py", "typing-extensions"}
+        old = [line for line in lines if setup.req_name(line) not in added]
+        ran, stamp = self.pip(old, lines)
+        self.assertEqual(set(ran), {line for line in lines if setup.req_name(line) in added})
+        self.assertEqual(self.pip(stamp, lines)[0], [])
 
 
 if __name__ == "__main__":

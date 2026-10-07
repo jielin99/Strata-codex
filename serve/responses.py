@@ -28,6 +28,7 @@ import time
 import uuid
 
 from serve.frontend import Event, _late_system_to_user, _parts_of, effort_kwargs
+from serve.structured import StructuredOutputError
 
 ENCRYPTED_PREFIX = "strata.r1:"                   # our own reasoning replay strings; others' are ignored
 HOSTED_TOOLS = ("web_search", "web_search_preview", "file_search", "computer_use_preview", "computer_use",
@@ -285,6 +286,22 @@ def request_tools(req: dict):
     return tools or None, names, skipped
 
 
+def request_tool_choice(req: dict, tools, names):
+    """Validate Responses choices before reusing the chat path's forced-call prefix."""
+    choice = req.get("tool_choice", "auto")
+    if choice is None or choice in ("auto", "none"):
+        return choice
+    if choice == "required" and tools:
+        return choice
+    if isinstance(choice, dict) and choice.get("type") in ("function", "custom"):
+        identity = (choice.get("namespace"), choice.get("name"), choice["type"])
+        for tool in tools or []:
+            if names.get(tool["name"]) == identity:
+                return {"type": "function", "name": tool["name"]}
+    raise ResponsesError("unsupported tool_choice or requested tool is not available", "tool_choice",
+                         "unsupported_parameter")
+
+
 def text_format(req: dict):
     """`text.format` -> the chat path's response_format (None: plain text)."""
     text = req.get("text")
@@ -351,7 +368,7 @@ class Assembler:
         self.prompt_tokens = prompt_tokens
         self.seq = 0
         self.item = None                             # the open output item
-        self.json_text = []                          # structured output: the answer, held until it is checked
+        self.pending = []                            # structured text and calls: validate before delivery
         reasoning = req.get("reasoning") if isinstance(req.get("reasoning"), dict) else {}
         self.response = {
             "id": new_id("resp"), "object": "response", "created_at": int(time.time()), "status": "in_progress",
@@ -427,6 +444,14 @@ class Assembler:
         return out
 
     def feed(self, ev: Event) -> list[dict]:
+        # Initial reasoning may stream. Once text or a call starts, hold the ordered events until validation.
+        # The parser mutates ToolCall objects while reading arguments, so keep snapshots rather than references.
+        if self.json_mode and (ev.kind != "reasoning" or self.pending):
+            self.pending.append(copy.deepcopy(ev))
+            return []
+        return self._feed(ev)
+
+    def _feed(self, ev: Event) -> list[dict]:
         out = []
         kind = ev.kind
         if kind == "reasoning":
@@ -441,10 +466,6 @@ class Assembler:
                                   content_index=0, delta=ev.text))
         elif kind == "content":
             if not ev.text:
-                return out
-            if self.json_mode:                       # sent once it is checked (finish)
-                out += self.close()
-                self.json_text.append(ev.text)
                 return out
             if self.item is None or self.item["type"] != "message":
                 out += self.close()
@@ -494,21 +515,63 @@ class Assembler:
             item["namespace"] = namespace
         return item
 
+    def _structured_events(self, done, validate):
+        """Validate each text item independently; a tool-only turn has no answer to validate.
+
+        Never let the presence of a call bypass validation of accompanying text. Validate the entire turn before
+        releasing any of its calls, so clients cannot execute a call from a turn that later fails validation.
+        On a token limit withhold unvalidated text and let finish emit response.incomplete instead.
+        """
+        events, text = [], []
+        length = done.get("finish") == "length"
+        calls = [ev.call for ev in self.pending if ev.kind == "tool_call"]
+        started = {ev.call.id for ev in self.pending if ev.kind == "tool_start"}
+        if not length and started - {call.id for call in calls}:
+            raise StructuredOutputError("model returned an unfinished tool call")
+        if not length:
+            choice = self.response["tool_choice"]
+            if choice == "required" and not calls:
+                raise StructuredOutputError("tool_choice requires a tool call")
+            if choice == "none" and calls:
+                raise StructuredOutputError("tool_choice forbids tool calls")
+            if isinstance(choice, dict) and choice.get("type") in ("function", "custom"):
+                target = (choice.get("namespace"), choice.get("name"), choice["type"])
+                if len(calls) != 1 or self.names.get(calls[0].name) != target:
+                    raise StructuredOutputError("model did not call exactly the requested tool")
+            if self.response["parallel_tool_calls"] is False and len(calls) > 1:
+                raise StructuredOutputError("parallel_tool_calls=false permits at most one tool call")
+            if any(call.name not in self.names for call in calls):
+                raise StructuredOutputError("model called an unknown tool")
+
+        def flush():
+            value = "".join(text)
+            text.clear()
+            if value.strip() and not length:
+                events.append(Event("content", text=validate(value, done.get("finish"))))
+
+        for ev in self.pending:
+            if ev.kind == "content":
+                text.append(ev.text)
+            else:
+                flush()
+                events.append(ev)
+        flush()
+        if not length and not calls and not any(ev.kind == "content" for ev in events):
+            validate("", done.get("finish"))         # empty/reasoning-only is not a structured answer
+        self.pending.clear()
+        return events
+
     def finish(self, done: dict, validate=None) -> list[dict]:
         """The end: close what is open, then response.completed (or .incomplete when max_output_tokens ran out).
         `validate(text, finish)` checks a structured answer and returns its text (or raises)."""
         length = done.get("finish") == "length"
+        out = []
+        if self.json_mode:
+            for ev in self._structured_events(done, validate):
+                out += self._feed(ev)
         # a call still open was cut off (its tool_call never came, #211): incomplete, whatever the finish
         unfinished = self.item is not None and self.item["type"] in ("function_call", "custom_tool_call")
-        out = self.close("incomplete" if length or unfinished else "completed")
-        if self.json_mode:
-            text = validate("".join(self.json_text), done.get("finish"))
-            out += self._open({"id": new_id("msg"), "type": "message", "status": "in_progress", "role": "assistant",
-                               "content": []})
-            self.item["content"][0]["text"] = text
-            out.append(self.event("response.output_text.delta", item_id=self.item["id"], output_index=self.index,
-                                  content_index=0, delta=text, logprobs=[]))
-            out += self.close()
+        out += self.close("incomplete" if length or unfinished else "completed")
         n = done.get("completion_tokens", 0)
         prompt = done.get("prompt_tokens", self.prompt_tokens)
         self.response["usage"] = {

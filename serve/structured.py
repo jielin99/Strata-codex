@@ -3,9 +3,8 @@
 The native engine has no grammar decoder. Failed generations are errors, never
 silently retried or returned as successful structured output.
 
-`jsonschema` is optional (no new hard dependency of the server): json_object needs only the standard library, and
-json_schema is checked against its schema when the package is installed - without it, only that the answer is one
-JSON object, and the server says so once.
+json_object needs only the standard library. json_schema uses jsonschema (installed by setup); older installs
+without it may use the object-only fallback for non-strict requests, but strict requests must fail explicitly.
 """
 import json
 import threading
@@ -46,7 +45,8 @@ def jsonschema_modules():
             except ImportError:
                 _jsonschema = False
                 print('[strata] response_format json_schema: the Python package jsonschema is not installed, so '
-                      'answers are only checked to be one JSON object (python -m pip install "jsonschema>=4.23,<5")',
+                      'non-strict answers are only checked to be one JSON object; strict requests require it '
+                      '(python -m pip install "jsonschema==4.26.0")',
                       flush=True)
         return _jsonschema or None
 
@@ -80,7 +80,7 @@ def _only_objects(node, root, refs=()):
     return isinstance(branches, list) and any(_only_objects(b, root, refs) for b in branches)
 
 
-def prepare_format(response_format, messages):
+def prepare_format(response_format, messages, *, allow_tools=False):
     if response_format is None:
         return messages, None
     if not isinstance(response_format, dict):
@@ -104,6 +104,9 @@ def prepare_format(response_format, messages):
             raise ValueError("response_format schema must accept only JSON objects at its root "
                              "(type object, or anyOf/oneOf of object schemas)")
         modules = jsonschema_modules()
+        if spec.get("strict") is True and modules is None:
+            raise ValueError('strict response_format requires jsonschema; install it with '
+                             'python -m pip install "jsonschema==4.26.0"')
     else:
         raise ValueError("response_format.type must be text, json_object or json_schema")
 
@@ -136,6 +139,11 @@ def prepare_format(response_format, messages):
                  "Use every required field, correct types, and only allowed fields. "
                  "Put all requested writing inside the appropriate JSON string fields.\nJSON Schema:\n" +
                  json.dumps(schema, ensure_ascii=False, allow_nan=False, separators=(",", ":")))
+    if allow_tools:
+        directive = ("You may call the available tools before answering, using the normal tool-call format. "
+                     "Tool calls and their arguments are separate from the answer schema. "
+                     "On a tool-call turn, omit commentary and answer text unless that text matches the schema. "
+                     "When answering, follow this requirement:\n" + directive)
     messages = [dict(message) for message in messages]
     if messages and messages[0].get("role") == "system":
         content = messages[0].get("content") or ""
@@ -185,7 +193,7 @@ def _extract_json(text: str) -> str:
     return s[start:]
 
 
-def validated_json(text, validator, finish):
+def validated_json(text, validator, finish, *, extract=True):
     def pairs(items):
         obj = {}
         for key, value in items:
@@ -200,7 +208,7 @@ def validated_json(text, validator, finish):
     if finish != "stop":
         raise StructuredOutputError(f"structured output was incomplete (finish_reason={finish}); increase the output budget")
     try:
-        value = json.loads(_extract_json(text), object_pairs_hook=pairs, parse_constant=constant)
+        value = json.loads(_extract_json(text) if extract else text, object_pairs_hook=pairs, parse_constant=constant)
         canonical = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     except (ValueError, TypeError) as exc:
         raise StructuredOutputError(f"model did not return valid JSON: {exc}") from exc
