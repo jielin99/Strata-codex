@@ -59,13 +59,12 @@ try {
     }
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo.FileName = [string]$resolvedPython[0]
-    $process.StartInfo.Arguments = '"' + $probePath + '" --smoke --output "' + $openvinoPath + '"'
+    $process.StartInfo.Arguments = '-X utf8 "' + $probePath + '" --smoke --output "' + $openvinoPath + '"'
     $process.StartInfo.UseShellExecute = $false
     $process.StartInfo.CreateNoWindow = $true
     $process.StartInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
     $process.StartInfo.RedirectStandardOutput = $true
     $process.StartInfo.RedirectStandardError = $true
-    $process.StartInfo.EnvironmentVariables["PYTHONUTF8"] = "1"
     $null = $process.Start()
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
@@ -85,7 +84,8 @@ try {
     "Python exit code: $probeExit" | Set-Content -LiteralPath (Join-Path $reportDir "openvino-status.txt") -Encoding UTF8
     Write-Host "OpenVINO probe exit: $probeExit (0=NPU smoke passed; 2=needs attention)."
 } catch {
-    $_.Exception.Message | Set-Content -LiteralPath (Join-Path $reportDir "openvino-console.txt") -Encoding UTF8
+    @($_.Exception.Message, $_.InvocationInfo.PositionMessage, $_.ScriptStackTrace) |
+        Set-Content -LiteralPath (Join-Path $reportDir "openvino-console.txt") -Encoding UTF8
     Write-Host "OpenVINO probe could not start. See openvino-console.txt."
 }
 Write-Host "Return the reports folder: $reportDir"
