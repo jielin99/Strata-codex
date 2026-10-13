@@ -3,6 +3,8 @@
 实验分支：`local-v0.1.43.1-intel-npu`。
 基础：上游正式 tag `v0.1.43.1`，commit `a0116b2782a5b82622358c04a06496485d12b2d6`。
 
+Ubuntu 开发机继续开发请先阅读[实验引继文档](../../docs/INTEL_NPU_HANDOFF.md)。
+
 ## 在 Windows 11 笔记本运行
 
 1. 解压整个诊断包到可写目录，如 `D:\AI\Strata-Intel-Diagnostics`。
