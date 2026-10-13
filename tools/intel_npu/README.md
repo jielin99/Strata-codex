@@ -47,7 +47,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File collect_windows.ps1 -Pyt
 
 每个设备记录：名称、后端、PCI 设备 ID、`host_unified_memory`、总内存、单次分配上限、
 sub-group 宽度，原生 Windows 引擎启动时要求的 `ext_intel_free_memory` 与 `ext_oneapi_graph`，
-以及引擎内核要用的 fp16/fp64。每块 GPU 跑一个 32 宽 sub-group 的小内核，核对结果。
+`ext_oneapi_limited_graph`（引擎不更新已实例化的图，受限图能力即可），以及引擎内核要用的 fp16/fp64。
+每块 GPU 跑一个 32 宽 sub-group 的小内核，并录制、实例化、重放一个两内核小图，核对结果。
 不做大块内存分配，专家缓存能否一次分配成功由引擎自己检验。
 
 报告在 `reports\sycl-<日期>-<时间>`，同时保存 `icx --version`、`sycl-ls` 和编译输出。

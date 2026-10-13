@@ -20,7 +20,7 @@
 
 namespace {
 
-std::string quoted(const std::string& s) {
+std::string json_str(const std::string& s) {
     std::string out = "\"";
     for (unsigned char c : s) {
         if (c == '"' || c == '\\') { out += '\\'; out += (char) c; }
@@ -40,16 +40,16 @@ const char* backend_name(sycl::backend b) {
 
 std::string env_or_null(const char* name) {
     const char* v = std::getenv(name);
-    return v ? quoted(v) : "null";
+    return v ? json_str(v) : "null";
 }
 
 // One field: "name": value, or "name": null plus the error text when the query throws.
 struct Obj {
     std::string body;
-    void raw(const char* k, const std::string& v) { body += (body.empty() ? "" : ",") + quoted(k) + ":" + v; }
+    void raw(const char* k, const std::string& v) { body += (body.empty() ? "" : ",") + json_str(k) + ":" + v; }
     template <class F> void get(const char* k, F f) {
         try { raw(k, f()); }
-        catch (const std::exception& e) { raw(k, "null"); raw((std::string(k) + "_error").c_str(), quoted(e.what())); }
+        catch (const std::exception& e) { raw(k, "null"); raw((std::string(k) + "_error").c_str(), json_str(e.what())); }
     }
     std::string str() const { return "{" + body + "}"; }
 };
@@ -74,24 +74,54 @@ std::string sub_group_32_check(const sycl::device& d) {
     }
     const int want = 31 * 32 / 2 + 1000 * 32;   // lanes 0..31 summed, and the sub-group's size
     for (int v : out)
-        if (v != want) return quoted("wrong result " + std::to_string(v) + ", expected " + std::to_string(want));
-    return quoted("ok");
+        if (v != want) return json_str("wrong result " + std::to_string(v) + ", expected " + std::to_string(want));
+    return json_str("ok");
+}
+
+// Record two kernels on an in-order queue (as the engine captures its decode steps), finalize, replay twice, check.
+// The engine never updates an executable graph (no update() or dynamic parameters in sycl/), so what it needs is
+// aspect::ext_oneapi_limited_graph; PR #2079 asks for the full aspect::ext_oneapi_graph.
+std::string graph_check(const sycl::device& d) {
+    namespace exp = sycl::ext::oneapi::experimental;
+    sycl::queue q(d, sycl::property_list{sycl::property::queue::in_order()});
+    int* p = sycl::malloc_device<int>(64, q);
+    if (p == nullptr) return json_str("malloc_device returned null");
+    std::string result;
+    try {
+        exp::command_graph<exp::graph_state::modifiable> g(q.get_context(), d);
+        g.begin_recording(q);
+        q.parallel_for(sycl::range<1>(64), [=](sycl::id<1> i) { p[i] = (int) i[0]; });
+        q.parallel_for(sycl::range<1>(64), [=](sycl::id<1> i) { p[i] = p[i] * 2 + 1; });
+        g.end_recording(q);
+        auto exec = g.finalize();
+        q.ext_oneapi_graph(exec);
+        q.ext_oneapi_graph(exec);
+        std::vector<int> h(64, -1);
+        q.memcpy(h.data(), p, 64 * sizeof(int)).wait();
+        result = "ok";
+        for (int i = 0; i < 64; ++i)
+            if (h[i] != 2 * i + 1) { result = "wrong result at " + std::to_string(i) + ": " + std::to_string(h[i]); break; }
+    } catch (const std::exception& e) {
+        result = std::string("exception: ") + e.what();
+    }
+    sycl::free(p, q);
+    return json_str(result);
 }
 
 std::string device_json(unsigned index, const sycl::device& d) {
     Obj o;
     o.raw("index", u(index));
-    o.get("name", [&] { return quoted(d.get_info<sycl::info::device::name>()); });
-    o.raw("backend", quoted(backend_name(d.get_backend())));
+    o.get("name", [&] { return json_str(d.get_info<sycl::info::device::name>()); });
+    o.raw("backend", json_str(backend_name(d.get_backend())));
     o.raw("is_gpu", b(d.is_gpu()));
     o.get("vendor_id", [&] { return u(d.get_info<sycl::info::device::vendor_id>()); });
-    o.get("driver_version", [&] { return quoted(d.get_info<sycl::info::device::driver_version>()); });
-    o.get("version", [&] { return quoted(d.get_info<sycl::info::device::version>()); });
+    o.get("driver_version", [&] { return json_str(d.get_info<sycl::info::device::driver_version>()); });
+    o.get("version", [&] { return json_str(d.get_info<sycl::info::device::version>()); });
     o.get("pci_device_id", [&] {
         if (!d.has(sycl::aspect::ext_intel_device_id)) return std::string("null");
         char hex[16];
         std::snprintf(hex, sizeof hex, "%04x", (unsigned) d.get_info<sycl::ext::intel::info::device::device_id>());
-        return quoted(hex);
+        return json_str(hex);
     });
     o.get("host_unified_memory", [&] { return b(d.get_info<sycl::info::device::host_unified_memory>()); });
     o.get("global_mem_size", [&] { return u(d.get_info<sycl::info::device::global_mem_size>()); });
@@ -111,12 +141,14 @@ std::string device_json(unsigned index, const sycl::device& d) {
         return u(d.get_info<sycl::ext::intel::info::device::free_memory>());
     });
     o.raw("ext_oneapi_graph", b(d.has(sycl::aspect::ext_oneapi_graph)));
+    o.raw("ext_oneapi_limited_graph", b(d.has(sycl::aspect::ext_oneapi_limited_graph)));
     o.raw("fp16", b(d.has(sycl::aspect::fp16)));
     o.raw("fp64", b(d.has(sycl::aspect::fp64)));
     o.raw("usm_device_allocations", b(d.has(sycl::aspect::usm_device_allocations)));
     o.raw("usm_host_allocations", b(d.has(sycl::aspect::usm_host_allocations)));
     o.raw("usm_shared_allocations", b(d.has(sycl::aspect::usm_shared_allocations)));
     if (d.is_gpu()) o.get("sub_group_32_kernel", [&] { return sub_group_32_check(d); });
+    if (d.is_gpu()) o.get("graph_record_replay", [&] { return graph_check(d); });
     return o.str();
 }
 
@@ -138,7 +170,7 @@ int main() {
             if (all[i].is_gpu() && all[i].get_backend() == sycl::backend::ext_oneapi_level_zero) level_zero_gpu = true;
         }
     } catch (const std::exception& e) {
-        error = quoted(e.what());
+        error = json_str(e.what());
     }
     std::printf("{\n  \"scope\": \"SYCL device capabilities and one tiny sub-group kernel; not Strata inference\",\n");
     std::printf("  \"env\": {\"ONEAPI_DEVICE_SELECTOR\": %s, \"ZES_ENABLE_SYSMAN\": %s, "

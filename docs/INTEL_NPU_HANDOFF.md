@@ -210,6 +210,33 @@ PR #2115 全是 Linux sysfs 安装逻辑，未迁入，因此也避开了它与 
 PR #2079 的能力检查会放行，但引擎会按这个小数字规划专家缓存（推断，UHD 730/Linux/2025.3.2，不是目标机）。
 另：首版探针在枚举设备后才读环境变量，SYCL 运行时启动时会自行设置 `ZES_ENABLE_SYSMAN`，读到的值不真实；已改为启动时先读。
 
+## 笔记本 SYCL 能力报告（2026-10-14 02:39，`PROBE_SYCL.bat`）
+
+用户回报目录 `sycl-20261014-023954/`。探针用笔记本的 icx 2026.1.1 编译成功，三种环境都运行成功、stderr 为空。
+Level Zero 下的 Arc 140T（PCI `7d51`，Level Zero 驱动 1.15.37858）：
+
+| 项目 | 默认 | `ZES_ENABLE_SYSMAN=1` | 再加 `RELAXED_ALLOCATION_LIMITS=1` |
+| --- | --- | --- | --- |
+| `ext_intel_free_memory` | true | true | true |
+| `free_memory` | 36054683648 | 36054683648 | 36054683648 |
+| `global_mem_size` | 36054683648 | 同左 | 同左 |
+| `max_mem_alloc_size` | 4294959104（4 GiB） | 4 GiB | 36054683648 |
+| `ext_oneapi_graph` | **false** | **false** | **false** |
+| fp16 / fp64 / sub-group 32 小内核 | true / true / ok | 同左 | 同左 |
+
+结论与推断：
+
+- PR #2079 的安装（`command_graph_supported`）和引擎启动（`ext_oneapi_graph`）都要求完整图能力，**按现状会拒绝这块核显**（已验证：代码条件 + 报告值）。
+- 引擎只录制、实例化、重放图，`sycl/src`、`sycl/include` 的 17 个用图文件中没有 `update()`、dynamic parameter 等
+  可执行图更新 API（`grep` 0 命中）。按 `sycl_ext_oneapi_graph` 规范，这只需要 `ext_oneapi_limited_graph`（推断：依据代码与规范，未运行引擎验证）。
+- `free_memory` 恒等于 `global_mem_size`（33.58 GiB），是总预算而不是实时空闲，不能用来规划专家缓存（推断：三次读数完全相同）。
+- 默认单次分配上限 4 GiB；PR #2079 的 Windows 配置没有设置 `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS`，大于 4 GiB 的专家缓存分配可能失败（推断，未运行）。
+
+探针第二版加入 `ext_oneapi_limited_graph` 与实际录制两个内核、实例化、重放两次的检查。Ubuntu UHD 730（Level Zero）：
+`ext_oneapi_graph=false`、`ext_oneapi_limited_graph=true`、录制重放结果正确；OpenCL 后端如实报异常
+（`opencl backend is not supported by SYCL Graph extension`），说明该检查能区分可用与不可用。笔记本上尚未运行第二版。
+第一版改名修正：自定义 `quoted()` 与 `std::quoted` 经 ADL 冲突，改名 `json_str()`。
+
 已知未解决：PR #2079 在 Windows 上缺 `ext_intel_free_memory` 或 `ext_oneapi_graph` 时，安装和引擎都直接拒绝；
 #2114 的核显内存回退只写了 Linux。是否要补 Windows 版，等 `PROBE_SYCL.bat` 在笔记本上的结果再定。
 
