@@ -1673,7 +1673,8 @@ int main(int argc, char **argv) try {
                       << std::quoted(d.get_backend() == sycl::backend::ext_oneapi_level_zero ? "level_zero"
                                      : d.get_backend() == sycl::backend::opencl ? "opencl" : "unknown")
                       << ",\"free_memory_supported\":" << (d.has(sycl::aspect::ext_intel_free_memory) ? "true" : "false")
-                      << ",\"command_graph_supported\":" << (d.has(sycl::aspect::ext_oneapi_graph) ? "true" : "false");
+                      << ",\"command_graph_supported\":" << (d.has(sycl::aspect::ext_oneapi_graph) ? "true" : "false")
+                      << ",\"limited_graph_supported\":" << (d.has(sycl::aspect::ext_oneapi_limited_graph) ? "true" : "false");
 #if defined(SYCL_EXT_INTEL_DEVICE_INFO) && SYCL_EXT_INTEL_DEVICE_INFO >= 6
             if (d.has(sycl::aspect::ext_intel_device_id))
                 std::cout << ",\"devid\":\"" << std::hex << d.get_info<sycl::ext::intel::info::device::device_id>()
@@ -2038,8 +2039,10 @@ int main(int argc, char **argv) try {
             std::fprintf(stderr, "strata generate: free VRAM query is unavailable (ext_intel_free_memory); check the Intel GPU driver and oneAPI runtime\n");
             return 2;
         }
-        if (!d.has(sycl::aspect::ext_oneapi_graph)) {
-            std::fprintf(stderr, "strata generate: command graphs are unavailable (ext_oneapi_graph); check the Intel GPU driver and oneAPI runtime\n");
+        // The engine records, finalizes and replays graphs but never updates an executable one, so the limited
+        // aspect is enough: the Arc 140T on Windows reports only that, and a recorded graph replays there.
+        if (!d.has(sycl::aspect::ext_oneapi_limited_graph)) {
+            std::fprintf(stderr, "strata generate: command graphs are unavailable (ext_oneapi_limited_graph); check the Intel GPU driver and oneAPI runtime\n");
             return 2;
         }
     }

@@ -327,6 +327,8 @@ class ToSycl(unittest.TestCase):
         self.assertNotIn("STRATA_SYCL_BIN", c["env"])
         self.assertEqual(c["env"]["STRATA_VERIFY_NO_HOST"], "1")
         self.assertEqual(c["env"]["STRATA_STAGER_THREADS"], "4")
+        # the expert cache is one allocation; the Arc 140T on Windows caps one at 4 GiB without this (probe_sycl.cpp)
+        self.assertEqual(c["env"]["UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS"], "1")
         self.assertTrue(c["env"]["ONEAPI_DEVICE_SELECTOR"].startswith("level_zero:"))
         self.assertEqual(c["args"][c["args"].index("--native") + 1], str((m.MOUNT / "d" / "a.gguf").resolve()))
 
@@ -399,6 +401,7 @@ class ToSycl(unittest.TestCase):
                  ({"driver": "unknown"}, "requires Level Zero"),
                  ({"free_memory_supported": False}, "free VRAM query is unavailable"),
                  ({"command_graph_supported": False}, "command graphs are unavailable"),
+                 ({"command_graph_supported": False, "limited_graph_supported": False}, "command graphs are unavailable"),
                  ({"free_memory_supported": None}, "free VRAM query is unavailable")]
         for fields, message in cases:
             with self.subTest(fields=fields):
@@ -412,6 +415,18 @@ class ToSycl(unittest.TestCase):
                     with self.assertRaises(SystemExit):
                         m.intel_gpus()
                 self.assertIn(message, out.getvalue())
+
+    def test_windows_gpu_probe_accepts_limited_graph_support(self):
+        # the Arc 140T on Windows (driver 32.0.101.8826): ext_oneapi_graph false, ext_oneapi_limited_graph true, and a
+        # recorded graph replays (tools/intel_npu/probe_sycl.cpp); the engine never updates an executable graph
+        m = self.mod()
+        card = {"index": 0, "name": "Intel(R) Arc(TM) 140T GPU (32GB)", "vram_gb": 33.6, "driver": "level_zero",
+                "free_memory_supported": True, "command_graph_supported": False, "limited_graph_supported": True}
+        result = mock.Mock(returncode=0, stdout=json.dumps([card]), stderr="")
+        with mock.patch.object(m.S, "WIN", True), mock.patch.object(m, "sycl_engine", return_value=(Path("strata.exe"), None)), \
+                mock.patch.object(m.subprocess, "run", return_value=result), contextlib.redirect_stdout(io.StringIO()):
+            cards = m.intel_gpus()
+        self.assertEqual(cards[0]["name"], card["name"])
 
     def test_windows_gpu_probe_rejects_old_engine_without_capability_fields(self):
         m = self.mod()

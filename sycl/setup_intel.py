@@ -119,8 +119,10 @@ def intel_gpus():
                 if card.get("free_memory_supported") is not True:
                     S.fail("native Intel GPU free VRAM query is unavailable (ext_intel_free_memory)",
                            "rebuild the native engine and check the Intel GPU driver and oneAPI runtime")
-                if card.get("command_graph_supported") is not True:
-                    S.fail("native Intel GPU command graphs are unavailable (ext_oneapi_graph)",
+                # the engine records, finalizes and replays graphs but never updates one, so limited support is
+                # enough (the Arc 140T on Windows has only that); an older engine reports only the full aspect
+                if card.get("limited_graph_supported") is not True and card.get("command_graph_supported") is not True:
+                    S.fail("native Intel GPU command graphs are unavailable (ext_oneapi_limited_graph)",
                            "rebuild the native engine and check the Intel GPU driver and oneAPI runtime")
             return cards
         except (OSError, ValueError, subprocess.TimeoutExpired) as ex:
@@ -300,6 +302,8 @@ def to_sycl(cfg: dict, exe: Path, ram: float, keep: dict, vram_gb: float = 0.0, 
         selector = f"level_zero:{cfg['gpu']}" if isinstance(cfg.get("gpu"), int) else "level_zero:gpu"
         env.update({"ONEAPI_DEVICE_SELECTOR": os.environ.get("ONEAPI_DEVICE_SELECTOR", selector),
                     "ZES_ENABLE_SYSMAN": "1",
+                    # the expert cache is one allocation; the Arc 140T on Windows caps one at 4 GiB without it
+                    "UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS": "1",
                     "STRATA_VERIFY_DEVICE_PLAN": "1", "STRATA_VERIFY_NO_HOST": "1",
                     "STRATA_STAGER_THREADS": "12"})
         env.update(cfg.get("env", {}))

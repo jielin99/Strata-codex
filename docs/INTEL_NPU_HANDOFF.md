@@ -237,8 +237,33 @@ Level Zero 下的 Arc 140T（PCI `7d51`，Level Zero 驱动 1.15.37858）：
 （`opencl backend is not supported by SYCL Graph extension`），说明该检查能区分可用与不可用。笔记本上尚未运行第二版。
 第一版改名修正：自定义 `quoted()` 与 `std::quoted` 经 ADL 冲突，改名 `json_str()`。
 
-已知未解决：PR #2079 在 Windows 上缺 `ext_intel_free_memory` 或 `ext_oneapi_graph` 时，安装和引擎都直接拒绝；
-#2114 的核显内存回退只写了 Linux。是否要补 Windows 版，等 `PROBE_SYCL.bat` 在笔记本上的结果再定。
+## 笔记本第一次 Windows 引擎编译与第二版探针（2026-10-14 02:49–03:01）
+
+用户回报目录 `sycl-20261014-024935/`：
+
+- `sycl\tools\build_windows.bat`（迁入 #2114/#2110/#2079 后的 `de9a1f64`）：CMake 配置成功，ninja **211/211**，
+  `error:` 0 处，`strata.exe` 生成；警告 10752 条（未使用函数、符号比较、未使用参数等）。
+- `strata.exe --list-devices`：Level Zero `index 0` 与 OpenCL `index 2` 都是 Arc 140T，`free_memory_supported` 前者 true，
+  `command_graph_supported` 两者 false，`devid 7d51`，`vram_gb 33.5785`。
+- 第二版探针，Level Zero 140T 三种环境：`ext_oneapi_graph=false`、`ext_oneapi_limited_graph=true`、
+  **录制两内核小图并重放两次结果正确**；OpenCL 140T 报 `opencl backend is not supported by SYCL Graph extension`。
+
+据此修改（本分支，非上游）：
+
+| 文件 | 改动 |
+| --- | --- |
+| `sycl/src/program/generate.cpp` | Windows 启动检查改要求 `ext_oneapi_limited_graph`；`--list-devices` 增加 `limited_graph_supported`，`command_graph_supported` 照旧报告完整能力 |
+| `sycl/setup_intel.py` | 安装检查接受受限图或完整图；Windows 原生配置加 `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1` |
+| `tools/test_setup_sycl.py` | 新增“只有受限图也放行”和“配置含分配开关”两项，**修改前均失败**；新增“两者都无仍拒绝” |
+
+测试：`test_setup_sycl.py` 36 项、`test_setup_golden.py` 4 项通过；全部 33 个 setup 测试仅
+`test_setup_engine_hash.py` 原有的 2 项失败。`generate.cpp` 的改动**尚未编译**，待笔记本重编。
+
+判断不改：核显 `free_memory` 恒为 33.58 GiB（Windows 给核显的共享内存预算）。这是驱动实际允许的分配上限，
+专家缓存按它规划时，放不下的专家在主机内存镜像，总量与 Linux 按 `MemAvailable` 规划时相近（推断）。
+不补 Windows 版 `MemAvailable` 回退，记为残余风险：系统内存被其他程序占用时可能超额，首次真实运行时观察。
+
+（上段原记“#2079 缺 `ext_oneapi_graph` 即拒绝、#2114 内存回退只有 Linux”，已按上述结果处理。）
 
 ## Ubuntu 接续步骤
 
