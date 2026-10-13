@@ -168,6 +168,51 @@ SYCL 能力（`ext_intel_free_memory`、`ext_oneapi_graph`）仍未知。
 按 PR #2115 的核显内存规则（shard 1 + 20 GiB）粗算 63.5 GiB：Coder IQ1_M 约 47.6、Q2_0 约 55.0、
 IQ2_XS 约 56.5 GiB 可装下；IQ3_XXS 约 63.8 GiB 装不下。该规则来自作者 Linux 实测，Windows 上未验证。
 
+## 笔记本工具链（2026-10-14 用户回报）
+
+| 工具 | 版本 / 位置 |
+| --- | --- |
+| VS 2022 生成工具 | 17.14.41，MSVC 14.44.35207，`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools` |
+| oneAPI DPC++/C++ | 2026.1.1（Build 20260724），含 mkl、tbb、tcm、umf、ocloc |
+| `sycl-ls` | `[level_zero:gpu]` Arc 140T（Level Zero 1.15.37858）；OpenCL 的 CPU 与 GPU（驱动 32.0.101.8826） |
+| CMake / Ninja / Git | 4.4.4 / 1.13.2 / 2.52.0 |
+
+`vswhere` 能在标准位置找到带 `VC.Tools.x86.x64` 的 BuildTools，但 `setvars.bat intel64 vs2022` 仍报找不到 VS；
+设置 `VS2022INSTALLDIR` 后正常。原因未查明。`build_windows.bat` 自己用 `vswhere` 找 VS，不受此影响（推断，未实跑）。
+
+## 迁入的上游补丁（2026-10-14）
+
+按顺序 `cherry-pick -x`，保留原作者，无冲突：
+
+| 本分支提交 | 上游 | 内容 |
+| --- | --- | --- |
+| `5d0e9f99` | PR #2114 `f2f84b0e` | 核显空闲内存回退（仅 Linux）、核显不借用提示词槽、Linux 原生启动脚本 |
+| `a1687fd2` | PR #2110 `a31bc406` | 核显默认 `STRATA_WINDOW_SYNC=1` |
+| `3601da80`、`14fe5fd0` | PR #2079 `71db79e0`、`795acb34` | 原生 Windows SYCL 构建、安装与运行时检查 |
+
+PR #2115 全是 Linux sysfs 安装逻辑，未迁入，因此也避开了它与 #2079 在 `sycl/setup_intel.py` 的冲突。
+
+迁入后在 Ubuntu 跑 `tools/test_setup_*.py` 共 33 个：32 个通过；`test_setup_engine_hash.py` 有 2 项失败，
+迁入前的 `e765c766` 上同样 2 项失败（测试实际访问 GitHub release 得到 404），与本次迁入无关。
+**引擎没有编译过**：Ubuntu 没有 oneAPI 2026.1，Linux 编译也不经过 `_WIN32` 分支。
+
+`tools/intel_npu/probe_sycl.cpp` 在 Ubuntu 用 Docker 镜像 `intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04`
+编译（`-Wall -Wextra` 无警告），并挂载 `/dev/dri` 在本机 UHD 730（i915，Level Zero 1.14.37020）上运行，
+三种环境都退出 0，32 宽 sub-group 小内核结果正确：
+
+| 环境 | `ext_intel_free_memory` | 报告空闲 | `ext_oneapi_graph` | `max_mem_alloc_size` |
+| --- | --- | --- | --- | --- |
+| 无 | true | 266 MiB | false | 4095 MiB |
+| `ZES_ENABLE_SYSMAN=1` | true | 283 MiB | false | 4095 MiB |
+| 再加 `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1` | true | 272 MiB | false | 14283 MiB |
+
+同时 `MemAvailable` 约 13 GiB：这块核显报告的“空闲内存”远小于它实际可用的系统内存。若 Arc 140T 在 Windows 上也如此，
+PR #2079 的能力检查会放行，但引擎会按这个小数字规划专家缓存（推断，UHD 730/Linux/2025.3.2，不是目标机）。
+另：首版探针在枚举设备后才读环境变量，SYCL 运行时启动时会自行设置 `ZES_ENABLE_SYSMAN`，读到的值不真实；已改为启动时先读。
+
+已知未解决：PR #2079 在 Windows 上缺 `ext_intel_free_memory` 或 `ext_oneapi_graph` 时，安装和引擎都直接拒绝；
+#2114 的核显内存回退只写了 Linux。是否要补 Windows 版，等 `PROBE_SYCL.bat` 在笔记本上的结果再定。
+
 ## Ubuntu 接续步骤
 
 1. 阅读本文件，检查当前改动和开发机硬件、驱动、oneAPI/OpenVINO 工具链，保留版本清单。
