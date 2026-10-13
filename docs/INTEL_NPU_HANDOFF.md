@@ -92,6 +92,82 @@ NPU 资料以官方文档为准：
 设备间共享物理内存也不保证共享张量零开销。需要测量量化转换、图编译、提交、同步、
 访存和实际计算；设备利用率上升不能单独作为收益证据。
 
+## Ubuntu 开发机盘点与上游补丁审查（2026-10-13）
+
+开发机实测（`lscpu`、`lspci -nn`、`free -g`、驱动绑定读 `/sys/bus/pci/devices/0000:00:02.0/driver`）：
+
+| 项目 | 结果 |
+| --- | --- |
+| 系统 | Ubuntu 24.04.5，内核 7.0.0-38 |
+| CPU / 内存 | i3-13100（8 线程）/ 15 GiB，磁盘剩余 335 GiB |
+| 核显 | UHD Graphics 730 `8086:4692`，当前绑定 **i915**（xe 模块已加载但未接管） |
+| NPU | **没有**。`00:08.0 [8086:464f]` 是 GNA，不是 NPU；无 `/dev/accel` |
+| 工具链 | 无 oneAPI（`icpx`/`sycl-ls`）、无 `cmake`、无 OpenVINO、无 numpy；sudo 需密码 |
+
+结论：这台机器内存低于模型最低 32 GB，**不能做第 4 步真实 Strata 基线，也不能做任何 NPU 实测**。
+装 oneAPI 后最多能编译 SYCL 引擎、在 UHD 730 上跑小型 parity 测试。`probe_openvino.py` 在此机因缺 numpy
+退出码 2，与“缺依赖时报错”的设计一致。
+
+上游 PR 已以只读引用取到本地 `refs/upstream-pr/<号>`（未合并、未推送）。四个 PR 都基于 `7695859a`
+（正式 tag 基线 `a0116b27` 之前 33 个提交），截至取回时都未合入上游 main。各自单独 cherry-pick 到本分支均无冲突；
+按 2114→2110→2115→2079 顺序叠加时，2079 与 2115 在 `sycl/setup_intel.py` 冲突。
+
+| PR | 对 Windows 11 核显目标的适用性 |
+| --- | --- |
+| #2079 | 引擎侧 Windows 移植（文件读取改 `ReadFile`、CMake 的 `/fp:precise` `/Qmkl`、Pinned arena、`GlobalMemoryStatusEx`）是必需基础。但 setup 只认 `INTEL_ARC` 表里的独显 ID，引擎在 Windows 上**缺 `ext_intel_free_memory` 即退出 2**，核显会被直接拒绝 |
+| #2110 | 只改 `verify.cpp` 一处，用 `host_unified_memory` 判核显后默认 `STRATA_WINDOW_SYNC=1`。与平台无关，可直接复用 |
+| #2114 | 核显空闲内存回退只在 `__linux__` 下读 `/proc/meminfo`，Windows 需另写同义实现；禁止提示词借用一段与平台无关 |
+| #2115 | 全部基于 Linux sysfs 和 `setvars.sh`，Windows 不可直接用，只能参考其 RAM 预算规则 |
+
+待笔记本报告确认的关键事实：Windows Level Zero 下核显是否提供 `ext_intel_free_memory` 和 `ext_oneapi_graph`。
+现有诊断包只做 OpenVINO 枚举，没有采这两项。
+
+## 笔记本诊断报告（2026-10-13 23:24 采集）
+
+来源：用户提供的 `20261013-232354/` 报告目录（`hardware.json` 等五个文件，未纳入 Git）。`errors` 为空。
+
+| 项目 | 报告内容 |
+| --- | --- |
+| CPU | Intel Core Ultra 9 285H，16 核 16 线程 |
+| 内存 | 63.5 GiB（2 × 32 GiB，6400 MT/s），采集时空闲 53.3 GiB |
+| 系统 | Windows 11 专业版，版本 10.0.26300（Build 26300） |
+| 核显 | Intel Arc 140T GPU（名称显示 32GB），驱动 32.0.101.8826 |
+| NPU | Intel AI Boost，驱动 32.0.100.4778（驱动日期 2026-04-28），状态 OK |
+| 工具链 | 有 `python`/`py`；无 `sycl-ls`、`icx`、`cmake`、`ninja`、`cl`，无 oneAPI `setvars` |
+| OpenVINO 检查（23:24） | 缺 numpy，Python 退出码 2，设备列表为空 |
+| OpenVINO 复查（23:39） | 独立 venv：OpenVINO 2026.4.1、numpy 2.5.4。枚举到 CPU、GPU（`Arc 140T (iGPU)`）、NPU（`Intel AI Boost`） |
+
+`smoke.json`（64×64 FP32 MatMul）：
+
+| 设备 | 编译 | 首次推理 | 最大绝对误差 | 结果 |
+| --- | --- | --- | --- | --- |
+| CPU | 17.5 ms | 0.784 ms | 2.8e-08 | 通过 |
+| GPU.0 | 1940.9 ms | 0.522 ms | 4.0e-05 | 通过 |
+| NPU | 579.5 ms | 未执行 | — | 失败：`Unexpected execution device: ['N', 'P', 'U']` |
+
+NPU 失败是 `probe_openvino.py` 的缺陷，不是设备问题：NPU 插件的 `EXECUTION_DEVICES` 返回字符串 `"NPU"`，
+脚本逐字符遍历后误判。已修正为字符串先包成列表；回落到 CPU 或空列表仍判失败。
+
+修正后笔记本重跑 `smoke2.json`（23:47，同一 venv）：
+
+| 设备 | 编译 | 首次推理 | 最大绝对误差 | 执行设备 | 结果 |
+| --- | --- | --- | --- | --- | --- |
+| CPU | 13.9 ms | 0.420 ms | 2.8e-08 | CPU | 通过 |
+| GPU | 64.5 ms | 0.563 ms | 4.0e-05 | GPU.0 | 通过 |
+| NPU | 17.8 ms | 536.9 ms | 4.9e-05 | NPU | 通过 |
+
+`npu_smoke_passed=true`：小图确实在 NPU 上执行且数值正确。这**只证明 NPU 可用**，不是 Strata 接入 NPU。
+每个设备只测了一次首次推理，没有预热后的重复测量，这些毫秒数不能用作性能数据。
+GPU/NPU 编译时间比第一次（1940.9 / 579.5 ms）短很多，推测是驱动或 OpenVINO 的编译缓存，未核实。
+NPU 首次推理 537 ms 远高于 CPU/GPU，推测含首次提交开销；稳态开销需另行重复测量。
+
+报告没有采 PCI 设备 ID。285H 的 Arc 140T 应为 `8086:7d51`（PR #2115 的表），这是推断，未从报告核实。
+核显硬件与 PR #2110/#2114 作者的机器同型（285H/Arc 140T），但作者在 Linux 上测，Windows 驱动下的
+SYCL 能力（`ext_intel_free_memory`、`ext_oneapi_graph`）仍未知。
+
+按 PR #2115 的核显内存规则（shard 1 + 20 GiB）粗算 63.5 GiB：Coder IQ1_M 约 47.6、Q2_0 约 55.0、
+IQ2_XS 约 56.5 GiB 可装下；IQ3_XXS 约 63.8 GiB 装不下。该规则来自作者 Linux 实测，Windows 上未验证。
+
 ## Ubuntu 接续步骤
 
 1. 阅读本文件，检查当前改动和开发机硬件、驱动、oneAPI/OpenVINO 工具链，保留版本清单。

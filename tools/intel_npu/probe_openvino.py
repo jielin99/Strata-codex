@@ -57,7 +57,12 @@ def main():
                 start = time.perf_counter()
                 compiled = core.compile_model(model, device)
                 item["compile_ms"] = round((time.perf_counter() - start) * 1000, 3)
-                execution_devices = [str(value) for value in compiled.get_property("EXECUTION_DEVICES")]
+                raw_devices = compiled.get_property("EXECUTION_DEVICES")
+                # The NPU plugin returns a plain string ("NPU"); CPU/GPU return a list. Iterating the string split it
+                # into characters (['N', 'P', 'U']) and rejected a valid placement.
+                if isinstance(raw_devices, str):
+                    raw_devices = [raw_devices]
+                execution_devices = [str(value) for value in raw_devices]
                 item["execution_devices"] = execution_devices
                 # Explicit device selection plus reported placement: no automatic fallback.
                 if not execution_devices or any(value.split(".")[0] != device.split(".")[0] for value in execution_devices):
