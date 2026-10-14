@@ -265,6 +265,52 @@ Level Zero 下的 Arc 140T（PCI `7d51`，Level Zero 驱动 1.15.37858）：
 
 （上段原记“#2079 缺 `ext_oneapi_graph` 即拒绝、#2114 内存回退只有 Linux”，已按上述结果处理。）
 
+**订正（2026-10-14 实跑）**：上面“判断不改”的残余风险已经实际发生，见下一节。
+
+## 笔记本第一次真实推理：Flash-Next IQ3_XXS，32K（2026-10-14 04:19–12:55）
+
+模型 GSQ-RCO IQ3_XXS 两个分片，`--max-context 32768 --kv int8 --spec 4 --mtp ... --stream-experts --expert-cache auto`。
+引擎日志 `strata-iq3_xxs.log`（用户回报目录 `sycl-20261014-024935/`）。
+
+| 次 | 改动（相对 setup 生成的配置） | 结果 |
+| --- | --- | --- |
+| 1 | 无（`--prefill 4096`、reserve 1024、`NO_HOST=1`） | 缓存 25.83 GiB + 镜像 14.14 GiB；提示词缓冲区分配失败（“34384 of 34384 MiB free … wanted 0 MiB”），改 3072 重试时进程崩溃：`sycl9.dll` 0xc0000005 |
+| 2 | reserve 4096 | 缓存 22.99 + 镜像 16.97 GiB，合计不变；内存 100%，`UR_RESULT_ERROR_OUT_OF_RESOURCES`、`DEVICE_LOST` |
+| 3 | `NO_HOST=0`、`STRATA_MIRROR_MIB=8192` | 3532 个专家留在 SSD 由 CPU 算；内存约 53 GB；能启动但**输出全是 `!!!!`（token 0）**，草稿 126/126 全接受 |
+| 4 | `NO_HOST=1`、镜像不限、`--prefill 512` | 缓存 17466 个 28.24 GiB + 镜像 7110 个 11.73 GiB；**输出正常**（用户确认），内存峰值约 57 GB |
+
+第 4 次的 4 个请求（同一会话，热）：
+
+| 提示词 | 生成 | 草稿接受 |
+| --- | --- | --- |
+| 77 tok，7.1 tok/s | 253 tok，6.4 tok/s | 109/228 |
+| 181 新 tok，27.5 tok/s | 190 tok，7.2 tok/s | 115/183 |
+| 62 tok，10.2 tok/s | 175 tok，6.5 tok/s | 85/159 |
+| 181 新 tok，27.5 tok/s | 856 tok，4.7 tok/s | 399/780 |
+
+结论：
+
+- 核显的“VRAM”就是系统内存。reserve 只把专家在缓存和镜像之间挪动，总量约 40 GiB 不变（两次合计 39.97/39.96 GiB）。
+- 镜像上限是“当时可用内存 − 4 GiB”（`sycl/src/program/generate.cpp:4907-4921`），按独显设计；核显上提示词缓冲区也吃系统内存，
+  4096 分块放不下。驱动报告的空闲量恒为 33.58 GiB，`own_fits` 的分块预检因此总是通过。
+- `NO_HOST=0`（CPU 从 SSD 算缺失专家，GPU 每层等主机）在 Windows 140T 上输出 token 0，与 Linux xe 的记录一致
+  （`docs/INTEL_ARC.md:152`）（推断：第 3、4 次同时改了 `--prefill`，未单独隔离）。所以 Windows 核显上全部专家必须在内存里，
+  “放不下就留在 SSD”目前不可用。
+- 单块 28 GiB 缓存输出正常，A770 的“超过 4 GiB 读错”在这里没有出现。
+- 崩溃而非报错的缺陷：`sycl/src/prefill/prefill.cpp:327` 的 `Alloc::take` 把 `sycl::malloc_device` 返回的空指针当成功
+  （`DPCT_CHECK_ERROR` 只捕获异常），`failed_bytes` 不赋值（日志里的“wanted 0 MiB”），后续带空指针运行。**未修**，待决定。
+
+内核自检（`ctest`，关闭 Windows 智能应用控制后才能全部运行；之前未签名的测试 exe 被拦截）：
+
+- 通过：dequant_s2、s2_gemv、shared_expert、gdn、s2_gemv_q8、sampler、rope、quantize_act、router_top10、s_gemv、elementwise、
+  s_gemv_q8k、qsa、kv_q8、kv_stream、kv_q4、cvec、native_grouped、verify、native_multi、gr_multi、conversation_snapshot、
+  sycl_router_fast、sycl_payload_pairs；单独补跑的 iq_multi（含 IQ3_XXS mmvq 与 grouped）、resident_plan、kv_steps、bf16_gemv。
+- 失败但与本次无关：`gr_parity` 只有 `STRATA_QFUSE` 一项（SYCL 版不支持该路径，`fused_gr.dp.cpp:1755`，默认关闭）；
+  `s2_expert_grouped_parity` 新旧内核不逐位相同，但与主机参考值 0 处超差（Linux 上同样，`docs/A770_SPEED_SPEC.md:613`）；
+  `ple_parity` 缺 Q2_0 模型文件。
+- 未跑：`iq_parity`（测试数据未生成）。
+- 直接运行 `sycl_payload_pairs.exe` 的 120 处 FAIL 是因为缺 `STRATA_DOORBELL_CHECK=1`（ctest 会设，`sycl/CMakeLists.txt:386`）。
+
 ## Ubuntu 接续步骤
 
 1. 阅读本文件，检查当前改动和开发机硬件、驱动、oneAPI/OpenVINO 工具链，保留版本清单。

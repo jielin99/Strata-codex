@@ -194,15 +194,17 @@ dir /b "<模型目录>\*.gguf"
 | IQ2_XS | 68.0 GB | 约 56.5 GiB | 放得下 |
 | IQ3_XXS | 75.8 GB | 约 63.8 GiB | **超出**，只适合试跑（作者实测只剩 3–4 GiB，没跑好） |
 
-## 7. 安装并第一次启动 ⬜
+实测（2026-10-14，ThinkPad T14 / Arc 140T / 63.5 GiB）：IQ3_XXS 32K 能跑，内存峰值约 57 GB，但要按第 7 步末尾改配置。
 
-**这一步还没有人在 Windows 核显上跑过。**
+## 7. 安装并第一次启动 ⚠️
+
+2026-10-14 用 IQ3_XXS、32K 跑通，但 setup 生成的配置要手改（见本节末尾）。
 
 启动前关掉占内存的程序，打开任务管理器的「性能」页看内存。然后在执行过第 2 步的窗口里：
 
 ```bat
 cd /d D:\dev\Strata-intel-npu
-START-HERE.bat --backend sycl --family qwen --model IQ3_XXS --gguf-dir "<模型目录>" --context 8192 --data-dir D:\dev\Strata-data
+START-HERE.bat --backend sycl --family qwen --model IQ3_XXS --gguf-dir "<模型目录>" --context 32768 --data-dir D:\dev\Strata-data
 ```
 
 | 参数 | 作用 |
@@ -210,7 +212,7 @@ START-HERE.bat --backend sycl --family qwen --model IQ3_XXS --gguf-dir "<模型�
 | `--backend sycl` | 走 Intel SYCL 引擎（PR #2079 的原生 Windows 路径） |
 | `--family` / `--model` | 换别的模型时一起改，比如 Coder 用 `--family coder --model IQ1_M` |
 | `--gguf-dir` | 直接用已经下载好的模型文件，不会重新下载模型 |
-| `--context 8192` | 先用小上下文。不写的话，setup 会按核显报告的 33.6 GB“显存”把上下文默认设成 131072 |
+| `--context 32768` | 实测用的上下文。不写的话，setup 会按核显报告的 33.6 GB“显存”把上下文默认设成 131072。上下文对内存影响小（int8 KV），大头是约 40 GiB 的专家 |
 | `--data-dir` | 配置和小文件放这里。setup 还会下载 Python 包和 llama.cpp 源码 |
 
 预期会这样（推断）：
@@ -231,6 +233,18 @@ START-HERE.bat --backend sycl --family qwen --model IQ3_XXS --gguf-dir "<模型�
 - 专家缓存按驱动报告的 33.58 GiB 规划，这个数是 Windows 给核显的共享内存预算，不是实时空闲量。
   其他程序占用大量内存时可能会超额。
 - 不要用 `--host 0.0.0.0` 把服务暴露到局域网，除非同时设了 `--api-key`。
+
+**setup 生成的配置要改一处，另一处不要动**（实测，2026-10-14）。打开仓库根目录的 `strata-iq3_xxs.json`：
+
+| 项 | setup 写的 | 改成 | 原因 |
+| --- | --- | --- | --- |
+| `"--prefill"` | `"4096"` | `"512"` | 4096 时提示词缓冲区放不下，引擎崩溃（`sycl9.dll` 0xc0000005）或内存 100% 后 `DEVICE_LOST` |
+| `"env"` 里的 `STRATA_VERIFY_NO_HOST` | `"1"` | 不要动 | 改成 `"0"`（让 CPU 从 SSD 算放不下的专家）能省内存，但输出全是 `!!!!` |
+
+不要靠调大 `--vram-reserve-mib` 省内存：核显上它只把专家从缓存挪到镜像，总量不变。
+`--prefill 1024`、`2048` 没有试过。
+
+实测速度（同一会话热运行 4 次）：生成 4.7–7.2 tok/s，提示词 7.1–27.5 tok/s，内存峰值约 57 GB。
 
 ## 8. 以后启动 ⬜
 
@@ -261,11 +275,15 @@ setup 只在 `strata.exe` 不存在时才会编译（`ensure_windows_engine`）�
 | 引擎报 `command graphs are unavailable (ext_oneapi_graph)` | exe 是旧的。新版本的提示是 `ext_oneapi_limited_graph`。`git pull` 后重新编译 |
 | 引擎报 `ExpertCache: cudaMalloc(...) failed` | 可能没设 `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1`。新版本 setup 生成的配置里已经带上了 |
 | `PROBE_SYCL.bat` 说找不到 `icx` 或 `cl` | 先执行第 2 步 |
+| 输出全是 `!!!!!` | `STRATA_VERIFY_NO_HOST` 被改成了 `0`。改回 `1`，见第 7 步末尾 |
+| 启动时引擎退出，日志最后是 `do not fit ... trying a 3072-token chunk` | 提示词缓冲区放不下。`--prefill` 改成 `512` |
+| 运行测试 exe 时反复提示“程序被阻止” | Windows 智能应用控制拦截未签名程序。关闭后才能运行。注意：旧版 Windows 关闭后不能再打开（除非重装），新版本是否仍然如此未确认 |
 
 ## 验证状态汇总（2026-10-14）
 
 - **已在笔记本上跑通**：第 1–5 步。工具安装和检查；SYCL 能力检查第二版（受限图、录制重放、sub-group 32 都正常）；
   引擎完整编译 211/211、0 个错误；改动后增量编译通过；`--list-devices` 显示 `limited_graph_supported:true`。
 - **只在开发机上验证过**：setup 相关的测试（`tools/test_setup_sycl.py` 36 项通过）。
-- **还没验证**：第 7–8 步，也就是 Windows 上的 setup 流程、模型加载、推理、多轮对话，以及速度、内存和稳定性。
-  NPU 还没有接入 Strata，本文不涉及 NPU。
+- **已在笔记本上跑通（手改配置后）**：第 7 步，IQ3_XXS 32K 加载、4 次推理输出正常，速度和内存见第 7 步末尾。
+- **还没验证**：setup 不手改配置就能用；第 8 步的 `run-*.bat` 重启；长时间稳定性；首字延迟；`--prefill` 512 以外的取值；
+  其他模型。NPU 还没有接入 Strata，本文不涉及 NPU。
