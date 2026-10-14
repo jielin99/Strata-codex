@@ -324,8 +324,12 @@ struct Alloc {
             return p;
         }
         void* p = nullptr;
+        // sycl::malloc_device reports a failed allocation by returning nullptr, not by throwing, so DPCT_CHECK_ERROR
+        // alone took it for a success: the buffer was null, `failed_bytes` stayed 0 ("wanted 0 MiB"), and the chunk
+        // step-down ran on null buffers (Arc 140T on Windows: an access violation in sycl9.dll).
         if (DPCT_CHECK_ERROR(p = (void *)strata::malloc_device_guarded(
-                                 bytes, dpct::get_in_order_queue())) != 0) {
+                                 bytes, dpct::get_in_order_queue())) != 0 ||
+            p == nullptr) {
             ok = false; failed_bytes = bytes; return nullptr;
         }
         owned->push_back(p);
