@@ -311,6 +311,32 @@ Level Zero 下的 Arc 140T（PCI `7d51`，Level Zero 驱动 1.15.37858）：
 - 未跑：`iq_parity`（测试数据未生成）。
 - 直接运行 `sycl_payload_pairs.exe` 的 120 处 FAIL 是因为缺 `STRATA_DOORBELL_CHECK=1`（ctest 会设，`sycl/CMakeLists.txt:386`）。
 
+## 拉长上下文与空指针修复（2026-10-14 13:05–15:31）
+
+同一模型，`NO_HOST=1`、镜像不限、reserve 1024，只改上下文、KV 格式和 `--prefill`：
+
+| 配置 | 结果 |
+| --- | --- |
+| 64K int8，prefill 512 | 启动时 MTP 草稿头 178 MiB 分配失败（“the draft head does not fit”） |
+| 64K int8，prefill 512，reserve 2048 | 更早失败：verify 初始化 `DEVICE_LOST`。缓存+镜像合计不变（39.97 GiB），说明卡在系统内存，不是核显分配预算 |
+| 64K q4_0，prefill 512 | 4 个短请求正常，生成 5.1–6.5 tok/s |
+| 64K q4_0，prefill 1024 | 两次启动配置相同：一次首个请求 `OUT_OF_DEVICE_MEMORY` 后卡住，一次 5 个请求正常 |
+| 64K k8v4，prefill 512 | 短请求正常；737 token 的提示词读到第二块时 `OUT_OF_DEVICE_MEMORY`（MTP prefill，`mtp.cpp` 报“mtp prefill: no error”，原文在前一行） |
+| **48K（49152）k8v4，prefill 512** | 3 个短请求和 1 个长请求正常，内存稳定在 57–58 GB（用户观察） |
+
+48K k8v4 的长请求：9613 token（复用 374、新读 9239），读入 223 s（41.4 tok/s）；生成 4259 token，794 s（5.4 tok/s）；
+草稿接受 2081/3284。短请求读入 10.1–22.3 tok/s，生成 4.1–5.0 tok/s。只启动过一次，重启成功率未测。
+
+- 在边缘时成败取决于引擎以外的内存占用；失败出在 GPU 执行时（`OUT_OF_DEVICE_MEMORY` / `DEVICE_LOST`），分配检查拦不住。
+  短请求正常不代表稳定：读入超过一块的提示词时用到更多内存。
+- KV 格式的质量代价见 `bench/results/2026-09-27-kv-q4/README.md`（Q2_0、NVIDIA 上测）：q4_0 长文档困惑度 +8–12%；
+  k8v4 按 `docs/DETAILS.md` 好于 q4_0。IQ3_XXS / 140T 上未测质量。
+- 64K 以上（例如 105,804 token 的文件）需要 SSD 一层；它依赖 `NO_HOST=0` 的主机交接，在 140T 上输出 token 0，未修。
+- 服务端对超出上下文的请求直接拒绝、不截断（`serve/server.py:14`），这是设计行为。
+
+空指针修复 `7f44740c`（`sycl/src/prefill/prefill.cpp` 的 `Alloc::take`）：笔记本增量编译 5/5，0 个 `error:`。
+修复后各次启动都没有触发分块退让，所以“放不下时逐级缩小而非崩溃”这一行为本身**尚未在实机上触发验证**。
+
 ## Ubuntu 接续步骤
 
 1. 阅读本文件，检查当前改动和开发机硬件、驱动、oneAPI/OpenVINO 工具链，保留版本清单。

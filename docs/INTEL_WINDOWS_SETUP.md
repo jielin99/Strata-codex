@@ -242,9 +242,21 @@ START-HERE.bat --backend sycl --family qwen --model IQ3_XXS --gguf-dir "<模型�
 | `"env"` 里的 `STRATA_VERIFY_NO_HOST` | `"1"` | 不要动 | 改成 `"0"`（让 CPU 从 SSD 算放不下的专家）能省内存，但输出全是 `!!!!` |
 
 不要靠调大 `--vram-reserve-mib` 省内存：核显上它只把专家从缓存挪到镜像，总量不变。
-`--prefill 1024`、`2048` 没有试过。
+实测速度（32K int8，同一会话热运行 4 次）：生成 4.7–7.2 tok/s，提示词 7.1–27.5 tok/s，内存峰值约 57 GB。
 
-实测速度（同一会话热运行 4 次）：生成 4.7–7.2 tok/s，提示词 7.1–27.5 tok/s，内存峰值约 57 GB。
+**更长的上下文**（实测，2026-10-14）：目前可用的是 **49152 + `--kv k8v4` + `--prefill 512`**。在 json 里把
+`"--max-context"` 改成 `"49152"`、`"--kv"` 改成 `"k8v4"`。一个 9239 token 的提示词读入 41.4 tok/s，生成 5.4 tok/s，
+内存 57–58 GB。
+
+| 试过的配置 | 结果 |
+| --- | --- |
+| 64K int8 | 启动失败 |
+| 64K q4_0 | 短请求正常；长文档质量损失最大（`bench/results/2026-09-27-kv-q4`） |
+| 64K k8v4 | 短请求正常，737 token 的提示词出错（`OUT_OF_DEVICE_MEMORY`） |
+| `--prefill 1024`（64K q4_0） | 两次启动一次出错，在内存边缘 |
+
+这些配置都贴着内存上限：启动前关掉浏览器等占内存的程序。只测短问题不够，要用超过 512 token 的提示词试过才算稳定。
+超过上下文的请求（例如 10 万 token 的文件）会被直接拒绝，不会截断。
 
 ## 8. 以后启动 ⬜
 
@@ -277,6 +289,7 @@ setup 只在 `strata.exe` 不存在时才会编译（`ensure_windows_engine`）�
 | `PROBE_SYCL.bat` 说找不到 `icx` 或 `cl` | 先执行第 2 步 |
 | 输出全是 `!!!!!` | `STRATA_VERIFY_NO_HOST` 被改成了 `0`。改回 `1`，见第 7 步末尾 |
 | 启动时引擎退出，日志最后是 `do not fit ... trying a 3072-token chunk` | 提示词缓冲区放不下。`--prefill` 改成 `512` |
+| 长提示词时报 `mtp prefill: no error`，日志前一行是 `OUT_OF_DEVICE_MEMORY` | 内存到了边缘。降上下文（例如 64K 改 49152）或关掉其他程序 |
 | 运行测试 exe 时反复提示“程序被阻止” | Windows 智能应用控制拦截未签名程序。关闭后才能运行。注意：旧版 Windows 关闭后不能再打开（除非重装），新版本是否仍然如此未确认 |
 
 ## 验证状态汇总（2026-10-14）
@@ -285,5 +298,6 @@ setup 只在 `strata.exe` 不存在时才会编译（`ensure_windows_engine`）�
   引擎完整编译 211/211、0 个错误；改动后增量编译通过；`--list-devices` 显示 `limited_graph_supported:true`。
 - **只在开发机上验证过**：setup 相关的测试（`tools/test_setup_sycl.py` 36 项通过）。
 - **已在笔记本上跑通（手改配置后）**：第 7 步，IQ3_XXS 32K 加载、4 次推理输出正常，速度和内存见第 7 步末尾。
-- **还没验证**：setup 不手改配置就能用；第 8 步的 `run-*.bat` 重启；长时间稳定性；首字延迟；`--prefill` 512 以外的取值；
+  49152 k8v4 也跑通，包括 9239 token 的长提示词。
+- **还没验证**：setup 不手改配置就能用；第 8 步的 `run-*.bat` 重启；长时间稳定性；重启成功率；首字延迟；2 万 token 以上的提示词；k8v4 / q4_0 的回答质量；
   其他模型。NPU 还没有接入 Strata，本文不涉及 NPU。
