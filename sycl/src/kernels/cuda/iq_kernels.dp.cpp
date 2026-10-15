@@ -118,6 +118,35 @@ __dpct_inline__ float vec_dot_q2_0_q8_1(const void *__restrict__ vbq,
     return d2 * d8 * sumi;
 }
 
+// STRATA_Q2_SWAR=1 (off by default): the Q2_0 expert down without dpct::byte_level_permute, which emulates CUDA's
+// one-instruction __byte_perm with four 64-bit variable shifts. The four permutes above turn the eight 2-bit codes
+// of q (code k = bits 2k..2k+1) into bytes code - 1, codes 0-3 in qx and 4-7 in qy. Here each code is moved into
+// its byte and 1 is subtracted per byte with the top bit set, so no byte borrows from the next: the same bits for
+// every int16 q (all 65,536 checked against util.hpp's byte_level_permute).
+__dpct_inline__ uint32_t q2_byte_codes(uint32_t b) {   // b: four 2-bit codes -> four bytes, each code - 1
+    const uint32_t x = (b & 0x03u) | ((b & 0x0cu) << 6) | ((b & 0x30u) << 12) | ((b & 0xc0u) << 18);
+    return ((x | 0x80808080u) - 0x01010101u) ^ 0x80808080u;
+}
+__dpct_inline__ float vec_dot_q2_0_q8_1_swar(const void *__restrict__ vbq,
+                                             const block_q8_1 *__restrict__ bq8_1,
+                                             const int &kbx, const int &iqs) {
+    const block_q2_0* bq2_0 = (const block_q2_0*) vbq + kbx;
+    const float d2 = bq2_0->d;
+    const int16_t* qs = (const int16_t*) bq2_0->qs + iqs * 4;
+    const block_q8_1* bq8_1_chunk = bq8_1 + iqs;
+    int sumi = 0;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const uint32_t q = (uint32_t) (uint16_t) qs[j];
+        const int u = get_int_b4(bq8_1_chunk->qs, j * 2 + 0);
+        const int v = get_int_b4(bq8_1_chunk->qs, j * 2 + 1);
+        sumi = ggml_cuda_dp4a(u, (int) q2_byte_codes(q & 0xffu), sumi);
+        sumi = ggml_cuda_dp4a(v, (int) q2_byte_codes(q >> 8), sumi);
+    }
+    const float d8 = bq8_1_chunk->ds[0];
+    return d2 * d8 * sumi;
+}
+
 // SYCL port: ggml's __vcmpne4 / __vsub4 came out of dpct as per-byte loops (extract, compare, insert, x4); on Xe the
 // expert dot kernels were ALU-bound with them (77% XVE active, metrics 2026-09-30). SWAR forms of the two uses:
 //   swar_ne4(x): 0xFF in every byte of x that is non-zero (the sign masks: at most one bit per byte)
@@ -750,6 +779,10 @@ template<> struct Fmt<29> { static constexpr int qk = 256, ipb = 8, step = 1;
     static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_iq1_m_q8_1(v, y, kbx, iqs); } };
 template<> struct Fmt<42> { static constexpr int qk = 64, ipb = 2, step = 1;
     static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_q2_0_q8_1(v, y, kbx, iqs); } };
+// STRATA_Q2_SWAR: Q2_0 again (the same blocks), decoded without byte_level_permute; only the down dispatch uses it
+constexpr int kQ2Swar = 142;
+template<> struct Fmt<kQ2Swar> { static constexpr int qk = 64, ipb = 2, step = 1;
+    static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_q2_0_q8_1_swar(v, y, kbx, iqs); } };
 template<> struct Fmt<12> { static constexpr int qk = 256, ipb = QI4_K / VDR_Q4_K, step = VDR_Q4_K;
     static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) { return vec_dot_q4_K_q8_1(v, y, kbx, iqs); } };
 template<> struct Fmt<13> { static constexpr int qk = 256, ipb = QI5_K / VDR_Q5_K, step = VDR_Q5_K;
@@ -1749,6 +1782,22 @@ template <> struct Multi<42> {   // q2_0 (down)
         ds = chunk->ds[0];
     }
     __dpct_inline__ static float finish(int s0, int s1, const MultiW& m, float ds) { return m.d * ds * (float) (s0 + s1); }
+};
+template <> struct Multi<kQ2Swar> {   // q2_0 (down), STRATA_Q2_SWAR: Multi<42>'s weights without byte_level_permute
+    static constexpr bool has = true; static constexpr int NW = 8;
+    __dpct_inline__ static void prep(const void* vbq, int kbx, int iqs, MultiW& m, const void* = nullptr) {
+        const block_q2_0* bq2_0 = (const block_q2_0*) vbq + kbx;
+        const int16_t* qs = (const int16_t*) bq2_0->qs + iqs * 4;
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            const uint32_t q = (uint32_t) (uint16_t) qs[j];
+            m.w[2 * j + 0] = (int) q2_byte_codes(q & 0xffu);
+            m.w[2 * j + 1] = (int) q2_byte_codes(q >> 8);
+        }
+        m.d = bq2_0->d;
+    }
+    __dpct_inline__ static void acts(const block_q8_1* y, int iqs, int* u, float& ds) { Multi<42>::acts(y, iqs, u, ds); }
+    __dpct_inline__ static float finish(int s0, int s1, const MultiW& m, float ds) { return Multi<42>::finish(s0, s1, m, ds); }
 };
 
 // One row against E activations at once, LANES lanes per row.
@@ -2822,6 +2871,9 @@ bool g_old_kernels = env_on("STRATA_OLD_IQ_MMVQ");
 // every format; STRATA_EXPERT_SPLIT=1 takes upstream's multi kernels, launched with their own grid (GU_ROWS rows).
 bool g_split_multi = env_on("STRATA_EXPERT_SPLIT");
 bool g_no_sub16_gu = env_on("STRATA_NO_SUB16_GU");
+// STRATA_Q2_SWAR=1 (off by default): a Q2_0 down on the lane kernels runs as kQ2Swar, the same bits without
+// byte_level_permute (see q2_byte_codes); STRATA_EXPERT_SPLIT's Split<42> path is left as it is
+bool g_q2_swar = env_on("STRATA_Q2_SWAR");
 // STRATA_IQ_STAGE_GRID=0 disables staging 64-bit i-quant codebook tables into shared memory
 bool g_stage_grid = [] {
     const char* v = std::getenv("STRATA_IQ_STAGE_GRID");
@@ -5202,6 +5254,11 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     const int d_rows = (!g_old_kernels && !g_no_sub16_gu && L.n_ff == 640) ? (L.d_type == 20 ? 32 : (L.d_type == 42 ? 16 : 8)) : 8;
     const dpct::dim3 gd((unsigned)((L.n_embd + d_rows - 1) / d_rows),
                         (unsigned)gy);
+    if (L.d_type == 42 && g_q2_swar && (g_old_kernels || !g_split_multi)) {   // the lanes path launch_down<42> takes
+        launch_down<kQ2Swar>(gd, s, grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+        check("native_expert_grouped/down");
+        return;
+    }
 #if defined(STRATA_HIP_GFX906)
     if ((em0 == 7 || em0 == 8) && (L.d_type == 20 || L.d_type == 42)) {
         const dim3 gl((unsigned) ((L.n_embd + LDS_RB - 1) / LDS_RB), (unsigned) cap_groups);
