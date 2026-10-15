@@ -1,0 +1,45 @@
+device: Intel(R) Arc(TM) 140T GPU (32GB)
+driver: 1.15.37858
+buffer: 2048 MiB, iterations: 20
+device iter 0: 73.16 GB/s
+device iter 1: 74.96 GB/s
+device iter 2: 71.76 GB/s
+device iter 3: 71.97 GB/s
+device iter 4: 72.88 GB/s
+device iter 5: 72.77 GB/s
+device iter 6: 75.48 GB/s
+device iter 7: 72.71 GB/s
+device iter 8: 70.50 GB/s
+device iter 9: 74.71 GB/s
+device iter 10: 69.05 GB/s
+device iter 11: 71.06 GB/s
+device iter 12: 72.62 GB/s
+device iter 13: 71.50 GB/s
+device iter 14: 72.17 GB/s
+device iter 15: 74.49 GB/s
+device iter 16: 70.97 GB/s
+device iter 17: 75.62 GB/s
+device iter 18: 72.02 GB/s
+device iter 19: 73.79 GB/s
+summary device: median 72.71 GB/s, min 69.05, max 75.62 (n=20, check 80000000)
+host iter 0: 61.83 GB/s
+host iter 1: 66.64 GB/s
+host iter 2: 64.15 GB/s
+host iter 3: 64.94 GB/s
+host iter 4: 63.09 GB/s
+host iter 5: 63.14 GB/s
+host iter 6: 62.20 GB/s
+host iter 7: 63.21 GB/s
+host iter 8: 64.94 GB/s
+host iter 9: 61.60 GB/s
+host iter 10: 64.43 GB/s
+host iter 11: 61.89 GB/s
+host iter 12: 61.72 GB/s
+host iter 13: 62.51 GB/s
+host iter 14: 62.71 GB/s
+host iter 15: 62.18 GB/s
+host iter 16: 61.96 GB/s
+host iter 17: 63.50 GB/s
+host iter 18: 64.15 GB/s
+host iter 19: 63.13 GB/s
+summary host: median 63.13 GB/s, min 61.60, max 66.64 (n=20, check 80000000)

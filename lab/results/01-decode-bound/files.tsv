@@ -1,0 +1,19 @@
+argument	placeholder	type	name	bytes	file_count
+--pack	<model-dir>/packs/iq3_xxs	directory	iq3_xxs	1548225865	9
+--pack	<model-dir>/packs/iq3_xxs	entry	conversions.json	326	
+--pack	<model-dir>/packs/iq3_xxs	entry	dense.bin	1538035200	
+--pack	<model-dir>/packs/iq3_xxs	entry	index.txt	93687	
+--pack	<model-dir>/packs/iq3_xxs	entry	native_experts.txt	3296	
+--pack	<model-dir>/packs/iq3_xxs	entry	tokenizer/chat_template.jinja	9993	
+--pack	<model-dir>/packs/iq3_xxs	entry	tokenizer/merges.txt	3600844	
+--pack	<model-dir>/packs/iq3_xxs	entry	tokenizer/token_type.json	744960	
+--pack	<model-dir>/packs/iq3_xxs	entry	tokenizer/tokenizer.json	554	
+--pack	<model-dir>/packs/iq3_xxs	entry	tokenizer/vocab.json	5737005	
+--native	<model-dir>/models/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf	file	Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf	47039860096	1
+--ple-gguf	<model-dir>/models/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf	file	Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf	28800138432	1
+--expert-profile	<repo>/data/expert-profile-sycl.bin	file	expert-profile-sycl.bin	196632	1
+--mtp	<model-dir>/mtp/rt	directory	rt	824314948	4
+--mtp	<model-dir>/mtp/rt	entry	dense.bin	116099072	
+--mtp	<model-dir>/mtp/rt	entry	dense.txt	1880	
+--mtp	<model-dir>/mtp/rt	entry	draft_vocab.bin	425196	
+--mtp	<model-dir>/mtp/rt	entry	experts.bin	707788800	

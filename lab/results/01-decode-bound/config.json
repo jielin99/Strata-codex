@@ -1,0 +1,52 @@
+{
+  "exe": "<repo>/build-sycl-win/strata.exe",
+  "args": [
+    "--pack",
+    "<model-dir>/packs/iq3_xxs",
+    "--native",
+    "<model-dir>/models/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+    "--ple-gguf",
+    "<model-dir>/models/IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+    "--expert-profile",
+    "<repo>/data/expert-profile-sycl.bin",
+    "--expert-cache",
+    "auto",
+    "--spec",
+    "4",
+    "--spec-min-p",
+    "0.5",
+    "--mtp",
+    "<model-dir>/mtp/rt",
+    "--max-context",
+    "49152",
+    "--kv",
+    "k8v4",
+    "--pool-workers",
+    "10",
+    "--stream-experts",
+    "--vram-reserve-mib",
+    "1024",
+    "--prefill",
+    "512"
+  ],
+  "cwd": "<repo>",
+  "tokenizer": "<model-dir>/packs/iq3_xxs/tokenizer",
+  "model_name": "qwen3.8-flash-next-iq3_xxs",
+  "log": "<repo>/strata-iq3_xxs.log",
+  "port": 8080,
+  "backend": "sycl",
+  "lib_dirs": [
+    "<path-3>/bin",
+    "<path-4>/bin",
+    "<path-5>/bin",
+    "<path-6>/bin"
+  ],
+  "env": {
+    "ONEAPI_DEVICE_SELECTOR": "level_zero:gpu",
+    "ZES_ENABLE_SYSMAN": "1",
+    "UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS": "1",
+    "STRATA_VERIFY_DEVICE_PLAN": "1",
+    "STRATA_VERIFY_NO_HOST": "1",
+    "STRATA_STAGER_THREADS": "12"
+  }
+}
