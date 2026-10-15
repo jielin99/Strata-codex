@@ -14,6 +14,7 @@
 | `lab/results/NN-<名字>.md` | 笔记本上的 Codex | 对应手册的结论摘要 |
 | `lab/results/NN-<名字>/` | 笔记本上的 Codex | 可公开的结构化数据（tsv、json、md），每个文件不超过 200 KB |
 | `lab/tools/` | 开发机 | 测量工具源码，编译到笔记本的 `build-lab-*` 目录 |
+| `lab/analysis/NN-<名字>.md` | 开发机 | 对结论数据的分析 |
 | `lab/HISTORY.md` | 开发机 | 每轮一行的履历 |
 
 原始数据（日志、dmp、exe、zip 等）留在笔记本的 `D:\dev\strata-lab\NN-<名字>\`，**不提交**。
@@ -35,7 +36,7 @@ worktree 和主 checkout 共用同一份 git 配置，不算隔离。手册里�
 
 1. 确认当前目录在 `lab/140t` 上（`git branch --show-current`），而且 `git status --short` 里没有别人的改动。
 2. 先同步：`git fetch git@github.com:jielin99/Strata-codex.git lab/140t`，再 `git rebase FETCH_HEAD`。
-3. 只 `git add` 自己负责的路径（开发机：`lab/plans` `lab/tools` `lab/HISTORY.md` `lab/README.md`；
+3. 只 `git add` 自己负责的路径（开发机：`lab/plans` `lab/tools` `lab/analysis` `lab/HISTORY.md` `lab/README.md`；
    笔记本：`lab/results`），提交。
 4. 推送：`git push git@github.com:jielin99/Strata-codex.git HEAD:lab/140t`，**不加 `--force`**。
 5. 推送被拒绝时回到第 2 步，最多重试 3 次，还失败就停下来报告。
