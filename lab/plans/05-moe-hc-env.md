@@ -7,7 +7,8 @@
 **前提**：`plans/04` 已经执行完（引擎在 `7629f0b2`，`build-sycl-win\strata.exe` 是 04 编译出来的）。没有执行完就停下来报告。
 
 **目的**：`lab/analysis/04-moe-hc-code.md` 找到了几个只用环境变量就能切换的 MoE 和 hc 读的写法。这一份在笔记本上测：
-每种写法下，每种窗口列数（T）的 GPU 时间比默认快还是慢，回答是否和默认相同。
+每种写法下，每种窗口列数（T）的 GPU 时间比默认快还是慢。
+（回答是否相同这一份测不了：04 发现 `bench.json` 不含回答文本，而且同一配置每次生成的内容也不同。）
 计时用 `plans/03` 的方法（`STRATA_VERIFY_DEBUG=1`，每个窗口一行 T 和 GPU 时间）。这个开关本身会让运行变慢，但每段都开，所以段与段之间可以比较。
 生成 tok/s 在这一份里**不作为结论**，只记录。
 
@@ -47,16 +48,14 @@
    D:\dev\Strata-intel-npu\.venv\Scripts\python.exe D:\dev\Strata-lab140t\lab\tools\vdbg_windows.py windows.tsv by-t.tsv 1-base=1-base\engine.log 2-split=2-split\engine.log 3-lanes16=3-lanes16\engine.log 4-base=4-base\engine.log 5-lanes4=5-lanes4\engine.log 6-hcdirect=6-hcdirect\engine.log 7-hcnorm=7-hcnorm\engine.log 8-base=8-base\engine.log > vdbg.txt
    ```
 2. `timing.tsv`：8 段每个请求一行，列和 `results/01-decode-bound/timing.tsv` 相同，每个数字标出 bench.json 的行号。
-3. `answers.tsv` 和 `answers-check.txt`：做法和 `plans/04` 第 4 节相同（回答文本的 SHA256 前 16 位；文本本身不提交）。
-   `answers-check.txt` 里，对每个（请求序号、问题编号）列出：3 个 base 段之间是否相同；其他每段和 `1-base` 是否相同。
 
 ## 3. 放进数据目录的内容
-`windows.tsv`、`by-t.tsv`、`vdbg.txt`、`timing.tsv`、`answers.tsv`、`answers-check.txt`。提交前逐个打开确认只有数字、哈希和引擎状态。
+`windows.tsv`、`by-t.tsv`、`vdbg.txt`、`timing.tsv`。提交前逐个打开确认只有数字和引擎状态。
 
 ## 4. 结论 `lab/results/05-moe-hc-env.md`
 按 README 的「结论文件的格式」写。额外包括：
 1. 按 T 的 GPU 中位数表：行是 T=1、2、3、4（以及出现的 6），列是 8 个段，数字取 `by-t.tsv` 各段的 `gpu_median_ms`，括号里写窗口数。
-2. `answers-check.txt` 的摘要：base 之间是否一致；每个其他段有几个请求的回答和 `1-base` 不同。
+2. 每段的草稿接受数之和 / 提供数之和（从 `timing.tsv` 算）。
 3. 第 1 节要求记录的错误行（没有就写「没有」）。
 4. **不做分析，不写原因推断**，分析由开发机来做。
 
