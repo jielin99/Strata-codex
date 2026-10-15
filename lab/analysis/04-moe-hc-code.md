@@ -6,7 +6,7 @@ GR = `sycl/src/kernels/cuda/fused_gr.dp.cpp`。证据等级：✅ 已验证、�
 
 ## 1. 结论
 1. ✅ **hc 读的是 BF16，q8 路径在 SYCL 上不存在。** `STRATA_HC_Q8` 默认关（`sycl/src/core/native_dense.cpp:34`），而且 SYCL 的
-   `fused_gr_read_multi` 直接返回 false（GR:1883，注释 "the Q8_0 reads (S23 STRATA_HC_Q8) are not built"）。
+   `fused_gr_read_multi` 直接返回 false（GR:1882，注释 "the Q8_0 reads (S23 STRATA_HC_Q8) are not built"）。
    - 每次 hc 读约 13.3 MB（down 6.55 MB + up 6.55 MB + 小向量），每层 2 次，每个窗口 96 次，约 1.27 GB；路由 BF16 每层 2.62 MB，合计约 0.13 GB。
    - ⚠️ 按 PROFILE 的时间折算：hc-read0 32.4 ms / 0.64 GB ≈ 20 GB/s；hc-read1+router 48.5 ms / 0.76 GB ≈ 16 GB/s。只有读带宽的 22–28%。
    - 每次 hc 读是 4 个内核（GR:1757-1873），其中 norm 和 reduce 只有十几个工作组，⚠️ 推断主要花在启动和延迟上。
