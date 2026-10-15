@@ -7,7 +7,7 @@ needs -I<engine>/sycl/src/kernels/cuda for its relative include."""
 import sys
 
 src, dst = sys.argv[1], sys.argv[2]
-s = open(src, encoding="utf-8").read()
+s = open(src, encoding="utf-8", newline="").read()   # newline="": keep the file's own line ends (CRLF on a Windows checkout)
 start = s.index("void native_mmvq_q6k_wide_kernel(")
 end = s.index("// SYCL port: the wide Q6_K kernel with its weight loads issued U steps ahead")
 body = s[start:end]
@@ -22,5 +22,5 @@ new1 = ("vi1[p] = (int) (((((uint32_t) vl[p] >> 4 & 0x0f0f0f0fu) | ((((uint32_t)
 if body.count(old0) != 1 or body.count(old1) != 1:
     sys.exit("q6k_nosat_patch: the wide Q6_K kernel is not the expected one (engine changed?)")
 body = body.replace(old0, new0).replace(old1, new1)
-open(dst, "w", encoding="utf-8", newline="\n").write(s[:start] + body + s[end:])
+open(dst, "w", encoding="utf-8", newline="").write(s[:start] + body + s[end:])
 print("q6k_nosat_patch: wrote", dst)
