@@ -1,0 +1,25 @@
+base base-1.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+base base-1.tsv: driver: 1.15.37858
+base base-1.tsv: working set: 1024 MiB, 300 ms per case
+base base-2.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+base base-2.tsv: driver: 1.15.37858
+base base-2.tsv: working set: 1024 MiB, 300 ms per case
+base base-q6-1.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+base base-q6-1.tsv: driver: 1.15.37858
+base base-q6-1.tsv: working set: 1024 MiB, 300 ms per case
+base base-q6-2.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+base base-q6-2.tsv: driver: 1.15.37858
+base base-q6-2.tsv: working set: 1024 MiB, 300 ms per case
+nosat nosat-1.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+nosat nosat-1.tsv: driver: 1.15.37858
+nosat nosat-1.tsv: working set: 1024 MiB, 300 ms per case
+nosat nosat-2.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+nosat nosat-2.tsv: driver: 1.15.37858
+nosat nosat-2.tsv: working set: 1024 MiB, 300 ms per case
+nosat nosat-q6-1.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+nosat nosat-q6-1.tsv: driver: 1.15.37858
+nosat nosat-q6-1.tsv: working set: 1024 MiB, 300 ms per case
+nosat nosat-q6-2.tsv: device: Intel(R) Arc(TM) 140T GPU (32GB)
+nosat nosat-q6-2.tsv: driver: 1.15.37858
+nosat nosat-q6-2.tsv: working set: 1024 MiB, 300 ms per case
+mmvq_compare: 156 rows, 0 label(s) missing a row, 0 row(s) with differing checksums -> compare.tsv

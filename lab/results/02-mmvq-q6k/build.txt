@@ -1,0 +1,19 @@
+COMMAND <engine>\.venv\Scripts\python.exe <tools>\q6k_nosat_patch.py <engine>\sycl\src\kernels\cuda\native_mmvq.dp.cpp <build>\nosat\native_mmvq_nosat.dp.cpp
+elapsed_s=0.073
+COMMAND icx -fsycl -fsycl-default-sub-group-size=32 -fsycl-device-code-split=per_kernel /c /O2 /EHsc /std:c++20 /fp:precise /DNDEBUG -Wno-deprecated-declarations -Wno-unused-parameter -Wno-unused-variable /I<engine>\sycl\include /I<engine>\include /I<engine>\third_party\ggml /I<engine>\sycl\src\kernels\cuda <tools>\mmvq_lab.cpp /Fo<build>\mmvq_lab.obj
+elapsed_s=9.98
+COMMAND icx -fsycl -fsycl-default-sub-group-size=32 -fsycl-device-code-split=per_kernel /c /O2 /EHsc /std:c++20 /fp:precise /DNDEBUG -Wno-deprecated-declarations -Wno-unused-parameter -Wno-unused-variable /I<engine>\sycl\include /I<engine>\include /I<engine>\third_party\ggml /I<engine>\sycl\src\kernels\cuda <engine>\sycl\src\kernels\cuda\iq_kernels.dp.cpp /Fo<build>\iq_kernels.obj
+elapsed_s=13.887
+COMMAND icx -fsycl -fsycl-default-sub-group-size=32 -fsycl-device-code-split=per_kernel /c /O2 /EHsc /std:c++20 /fp:precise /DNDEBUG -Wno-deprecated-declarations -Wno-unused-parameter -Wno-unused-variable /I<engine>\sycl\include /I<engine>\include /I<engine>\third_party\ggml /I<engine>\sycl\src\kernels\cuda <engine>\sycl\src\kernels\cuda\native_mmvq.dp.cpp /Fo<build>\base\native_mmvq.obj
+elapsed_s=26.422
+COMMAND icx -fsycl -fsycl-default-sub-group-size=32 -fsycl-device-code-split=per_kernel /c /O2 /EHsc /std:c++20 /fp:precise /DNDEBUG -Wno-deprecated-declarations -Wno-unused-parameter -Wno-unused-variable /I<engine>\sycl\include /I<engine>\include /I<engine>\third_party\ggml /I<engine>\sycl\src\kernels\cuda <build>\nosat\native_mmvq_nosat.dp.cpp /Fo<build>\nosat\native_mmvq.obj
+elapsed_s=26.536
+COMMAND icx -fsycl -fsycl-device-code-split=per_kernel -Xsycl-target-backend=spir64 "-cl-fp32-correctly-rounded-divide-sqrt -ze-opt-greater-than-4GB-buffer-required" <build>\mmvq_lab.obj <build>\iq_kernels.obj <build>\base\native_mmvq.obj -o <build>\base\mmvq_lab.exe
+elapsed_s=45.288
+COMMAND icx -fsycl -fsycl-device-code-split=per_kernel -Xsycl-target-backend=spir64 "-cl-fp32-correctly-rounded-divide-sqrt -ze-opt-greater-than-4GB-buffer-required" <build>\mmvq_lab.obj <build>\iq_kernels.obj <build>\nosat\native_mmvq.obj -o <build>\nosat\mmvq_lab.exe
+elapsed_s=43.642
+numstat: 2	2	<engine>/sycl/src/kernels/cuda/native_mmvq.dp.cpp => <build>/nosat/native_mmvq_nosat.dp.cpp
+<engine>\sycl\src\kernels\cuda\native_mmvq.dp.cpp	size=180774	SHA256=d8f4d847b16f06daa8bc015886257a073c4952f3da07927dc88e7c20c7def1f0
+<build>\nosat\native_mmvq_nosat.dp.cpp	size=180794	SHA256=7d4dd13b4153891bbacd00be511163e3cabd95fccf22140a874094d1024b6984
+<build>\base\mmvq_lab.exe	size=20713472	SHA256=ea38a4afb4711d42a426cab1495bf00b41138a44b0a44fa69c8572ab1fe02258
+<build>\nosat\mmvq_lab.exe	size=20711936	SHA256=8f91d8ec2e212f8b8779ef98ecfade267300164b9ef882cd9fdde72e87be8242
