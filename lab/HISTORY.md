@@ -23,3 +23,4 @@
 | 2026-10-15 | `plans/01-decode-bound.md` | `results/01-decode-bound.md`，分析 `analysis/01-decode-bound.md` | 54 个请求 0 失败；读带宽 72 / 62 GB/s；verify 只用到带宽的约 20–40%（推断瓶颈在内核）；草稿约占 10%；1 小时内漂移 9–15% |
 | 2026-10-15 | （开发机，未用笔记本） | `analysis/02-kernel-code.md` | 读代码 + 140T 编译目标的 ISA + UHD 730 实测：稠密 GEMV 卡在指令数；Q6_K 的 sub_sat 换成逐位等价写法，指令 −45–53%，UHD 上 +13–73%；MoE 默认内核有寄存器溢出 |
 | 2026-10-15 | `plans/02-mmvq-q6k.md` | `results/02-mmvq-q6k.md`，分析 `analysis/02-kernel-code.md` 第 5 节 | 140T 上去掉 sub_sat 全部更快（1 列 +19–28%，3 列 +87–132%），校验值相同；Q6_K 有列数断崖（现状 5 列、去掉 sub_sat 后 6 列掉到约 5 GB/s），其他类型没有 |
+| 2026-10-15 | `plans/03-window-t.md` | `results/03-window-t.md`，分析 `analysis/03-window-t.md` | 生成窗口只有 T=1–4（T=4 占 61%）；T=6 是读短提示词的窗口，GPU 541 ms，Q6_K 的大跌在引擎里也出现；Q6_K 去掉 sub_sat 对生成约 +3.5%（不是 6–8%），对读短提示词影响大 |
