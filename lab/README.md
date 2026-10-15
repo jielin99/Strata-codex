@@ -69,7 +69,7 @@ worktree 和主 checkout 共用同一份 git 配置，不算隔离。手册里�
 
 `lab/results/NN-<名字>.md` 至少包括：
 
-1. 执行环境：日期时间、引擎 checkout 的 HEAD、exe 的大小和修改时间、驱动版本、电源模式、是否刚重启。
+1. 执行环境：日期时间、引擎 checkout 的 HEAD、exe 的大小和修改时间、驱动版本、电源模式（设置里的那一层，查法见 `plans/01` 第 0 节；不能用 `powercfg /getactivescheme` 的计划名代替）、是否刚重启。
 2. 每个测量结果的表格，每个数字标出原始文件（`D:\dev\strata-lab\NN-...\` 下的相对路径）和行号。
 3. 偏离手册的地方，以及原因。
 4. 失败、卡住、崩溃的记录。

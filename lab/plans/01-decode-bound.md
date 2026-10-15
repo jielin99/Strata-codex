@@ -15,7 +15,13 @@
    - 日期时间、开机以来的时间（`net statistics workstation` 的「统计数据开始于」一行）。
    - `git -C D:\dev\Strata-intel-npu rev-parse HEAD`。
    - `build-sycl-win\strata.exe` 的大小、修改时间和 SHA256。
-   - `powercfg /getactivescheme`、可用物理内存。
+   - 电源：Windows 11 有两层，**以第二层为准**。
+     - 电源计划：`powercfg /getactivescheme`。现代待机的笔记本通常只有「平衡」，**不代表**设置里的电源模式。
+     - 电源模式（设置 → 系统 → 电源 → 电源模式）：`powercfg /getactiveoverlayscheme`；命令不存在时改用
+       `reg query HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes /v ActiveOverlayAcPowerScheme`。
+       对照：`ded574b5-45a0-4f42-8737-46345c09c238` = 最佳性能，`961cc777-2547-4f9d-8174-7d86181b8a7a` = 最佳能效，
+       全零或没有这个值 = 平衡。查不出来就写「未能读取」，**不要**用电源计划的名字代替。
+   - 可用物理内存。
    - GPU 驱动版本（PowerShell：`Get-CimInstance Win32_VideoController | Select Name,DriverVersion`）。
 
 ## 1. 配置和模型文件清单
