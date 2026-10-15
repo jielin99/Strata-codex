@@ -698,6 +698,82 @@ auto &lo = *sycl::ext::oneapi::group_local_memory_for_overwrite<
     }
 }
 
+// STRATA_GR_UP_EPI=1 (off by default): gr_up_multi_kernel with the epilogue after the row loop. Above, each row's
+// epilogue (the R / w_norm / rs / bo_prev / inj_prev loads and two sigmoids) runs on T lanes of the warp while the
+// others wait, row after row; here the row loop only keeps the T dots, in `g` at the index the epilogue overwrites,
+// and all 256 threads then run the T x 64 epilogues. Every value takes the same operations in the same order as in
+// the kernel above; checked bitwise on a UHD 730 (gr_bench's checksums at 1-6 tokens, and every output and the
+// updated R with and without apply / inject at 1-8 tokens). UHD 730 with the engine's link options, gr_bench: the
+// GR read 1223 -> 442 us at 1 token and 1584 -> 722 us at 3 (the up kernel 999 -> 222 us at 1 token).
+__dpct_inline__ void gr_up_multi_epi_kernel(GrMulti m) {
+    auto item_ct1 = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    auto &lo = *sycl::ext::oneapi::group_local_memory_for_overwrite<
+        float[kFusedGrMaxT][LR]>(
+        sycl::ext::oneapi::this_work_item::get_work_group<3>());
+    auto &g = *sycl::ext::oneapi::group_local_memory_for_overwrite<
+        float[kFusedGrMaxT][HC][UPM_COLS]>(
+        sycl::ext::oneapi::this_work_item::get_work_group<3>());
+    const int t = item_ct1.get_local_id(2), lane = t & 31, warp = t >> 5;
+    const int T = m.T;
+    const int d0 = item_ct1.get_group(2) * UPM_COLS;
+#pragma unroll
+    for (int i = t; i < T * LR; i += THREADS) {   // the down kernel's partial sums, in split order, then silu
+        const int k = i / LR, r = i % LR;
+        float x = 0.0f;
+#pragma unroll
+        for (int sp = 0; sp < DOWN_SPLIT; ++sp) if (sp < m.nsplit) x += m.part[((size_t) sp * kFusedGrMaxT + k) * LR + r];
+        x /= (float) HC;
+        const float v = x / (1.0f + sycl::native::exp(-x));
+        lo[k][r] = v;
+        m.a[k].lo[r] = v;
+    }
+    item_ct1.barrier();
+    for (int r = warp; r < HC * UPM_COLS; r += WARPS) {
+        const int c = r / UPM_COLS, dd = r - c * UPM_COLS, i = c * N + d0 + dd;
+        const sycl::uint4 *w4 =
+            reinterpret_cast<const sycl::uint4 *>(m.a[0].w_up + (size_t)i * LR);
+        const sycl::uint4 wa = *(w4 + lane);
+        const sycl::uint4 wb =
+            lane < LR / 8 - 32 ? *(w4 + 32 + lane) : sycl::uint4(0, 0, 0, 0);
+#pragma unroll
+        for (int k = 0; k < kFusedGrMaxT; ++k) {
+            if (k >= T) break;
+            float acc = dot8(wa, lo[k] + lane * 8);
+            if (lane < LR / 8 - 32) acc += dot8(wb, lo[k] + (32 + lane) * 8);
+            acc = warp_sum(acc);
+            if (lane == k) g[k][c][dd] = acc;   // token k's dot for this row, until its epilogue below
+        }
+    }
+    item_ct1.barrier(sycl::access::fence_space::local_space);
+    for (int j = t; j < T * HC * UPM_COLS; j += THREADS) {   // (token, row) pairs; each thread its own g entry
+        const int k = j / (HC * UPM_COLS), r = j - k * (HC * UPM_COLS);
+        const int c = r / UPM_COLS, dd = r - c * UPM_COLS, i = c * N + d0 + dd;
+        const FusedGrArgs& a = m.a[k];
+        float rv = a.R[i];
+        const float wn = a.w_norm[i];
+        const float rsc = a.rs[c];
+        if (a.apply) {
+            const float bo = a.bo_prev[d0 + dd], ip = a.inj_prev[c];
+            rv = sycl::fma(bo, 2.0f * sigmoidf_(ip / (float)HC), rv);
+            a.R_out[i] = rv;
+        }
+        const float x = rv * wn * rsc;
+        g[k][c][dd] = x * sigmoidf_(g[k][c][dd]);
+    }
+    item_ct1.barrier();
+    for (int i = t; i < T * UPM_COLS; i += THREADS) {
+        const int k = i / UPM_COLS, col = i - k * UPM_COLS;
+        float s = 0.0f;
+#pragma unroll
+        for (int c = 0; c < HC; ++c) s += g[k][c][col];
+        m.a[k].mixed[d0 + col] = s / (float) HC;
+    }
+}
+bool gr_up_epi() {   // STRATA_GR_UP_EPI=1: gr_up_multi_epi_kernel (opt-in)
+    static const bool v = std::getenv("STRATA_GR_UP_EPI") != nullptr && std::atoi(std::getenv("STRATA_GR_UP_EPI")) != 0;
+    return v;
+}
+
 
 // ================================ hc read v3 (opt-in: STRATA_GR_V3=1) - two kernels, stream-split ================
 // The norm kernel runs on only T blocks (~16 us of pure latency per call) and `down` on 41 blocks (~280 GB/s).
@@ -1860,7 +1936,14 @@ bool fused_gr_read_multi(const FusedGrArgs* a, int n_tok, float* xn_scratch, voi
         }
     }
     if (stamp_buf) gpu_stamp(stamp_buf, stamp_i0 + 1, stream);
-    {
+    if (gr_up_epi()) {
+        auto exp_props = sycl::ext::oneapi::experimental::properties{
+            sycl::ext::oneapi::experimental::use_root_sync};
+        st->parallel_for<dpct_kernel_name<class gr_up_multi_epi_k>>(
+            sycl::nd_range<3>(sycl::range(1, 1, UPM_BLOCKS) * sycl::range(1, 1, THREADS), sycl::range(1, 1, THREADS)),
+            exp_props,
+            [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] { gr_up_multi_epi_kernel(m); });
+    } else {
         auto exp_props = sycl::ext::oneapi::experimental::properties{
             sycl::ext::oneapi::experimental::use_root_sync};
 
