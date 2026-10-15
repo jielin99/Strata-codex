@@ -1535,8 +1535,19 @@ inline bool q6k_a2() {   // STRATA_MMVQ_A2=0 turns the aligned-load path off
     static const bool v = std::getenv("STRATA_MMVQ_A2") == nullptr || std::atoi(std::getenv("STRATA_MMVQ_A2")) != 0;
     return v;
 }
+// STRATA_MMVQ_Q6_SWAR=1 (off by default): the aligned-load wide kernel unpacks its 6-bit values with plain 32-bit
+// arithmetic instead of a per-byte saturating subtract, and a window of 6-8 columns runs as 4 columns + the rest.
+// Each unpacked byte is 0..63, so v - 32 never saturates and ((v | 0x80) - 0x20) ^ 0x80 per byte (no borrow
+// between bytes) is the same bits; each column's sum is computed alone, so the split changes no output either.
+// Arc 140T (driver 32.0.101.8826, mmvq_lab on the model's Q6_K shapes): 1-4 columns 1.2-2.3x faster, 5 columns
+// 5-7x (the sub_sat kernel falls off a cliff there); at 6 columns both versions fall off it (attn_qkv 4063 us
+// with SWAR, 6227 without), and 4 + 2 columns take 524 + 426 us.
+inline bool q6k_swar() {
+    static const bool v = [] { const char* e = std::getenv("STRATA_MMVQ_Q6_SWAR"); return e != nullptr && std::atoi(e) != 0; }();
+    return v;
+}
 
-template <int NCOLS, int RPW, int SG = WARP, int BS = (int) sizeof(Q6KBlock), bool A2 = false>   // BS: block stride
+template <int NCOLS, int RPW, int SG = WARP, int BS = (int) sizeof(Q6KBlock), bool A2 = false, bool SWAR = false>   // BS: block stride
 void native_mmvq_q6k_wide_kernel(const Q6KBlock* __restrict__ w, const Q81Block* __restrict__ x,
                                  float* __restrict__ y, int n_in, int n_out) {
     auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
@@ -1593,8 +1604,13 @@ void native_mmvq_q6k_wide_kernel(const Q6KBlock* __restrict__ w, const Q81Block*
             int vi0[4], vi1[4];
 #pragma unroll
             for (int p = 0; p < 4; ++p) {
-                vi0[p] = dpct::vectorized_binary<sycl::char4>((vl[p] & 0x0f0f0f0f) | ((vh[p] << 4) & 0x30303030), 0x20202020, dpct::sub_sat());
-                vi1[p] = dpct::vectorized_binary<sycl::char4>(((vl[p] >> 4) & 0x0f0f0f0f) | (((vh[p] >> 4) << 4) & 0x30303030), 0x20202020, dpct::sub_sat());
+                if constexpr (SWAR) {   // STRATA_MMVQ_Q6_SWAR: the same bits as the sub_sat below (see q6k_swar)
+                    vi0[p] = (int) (((((uint32_t) vl[p] & 0x0f0f0f0fu) | (((uint32_t) vh[p] << 4) & 0x30303030u)) | 0x80808080u) - 0x20202020u) ^ 0x80808080u;
+                    vi1[p] = (int) (((((uint32_t) vl[p] >> 4 & 0x0f0f0f0fu) | ((((uint32_t) vh[p] >> 4) << 4) & 0x30303030u)) | 0x80808080u) - 0x20202020u) ^ 0x80808080u;
+                } else {
+                    vi0[p] = dpct::vectorized_binary<sycl::char4>((vl[p] & 0x0f0f0f0f) | ((vh[p] << 4) & 0x30303030), 0x20202020, dpct::sub_sat());
+                    vi1[p] = dpct::vectorized_binary<sycl::char4>(((vl[p] >> 4) & 0x0f0f0f0f) | (((vh[p] >> 4) << 4) & 0x30303030), 0x20202020, dpct::sub_sat());
+                }
             }
 #pragma unroll
             for (int j = 0; j < NCOLS; ++j) {
@@ -1712,6 +1728,14 @@ void launch_q6k_wide(const void* weights, const void* x_q8_1, float* y, int n_in
     }
     if (rpw == 1 && q6k_a2()) {
         const unsigned blocks = unsigned((std::size_t(n_out) + WARPS - 1) / WARPS);
+        if (q6k_swar()) {
+            s->parallel_for<dpct_kernel_name<class native_mmvq_q6k_wide_a2s, dpct_kernel_scalar<NCOLS>>>(
+                sycl::nd_range<3>(sycl::range(1, 1, blocks) * sycl::range(1, WARPS, WARP), sycl::range(1, WARPS, WARP)),
+                [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] {
+                    native_mmvq_q6k_wide_kernel<NCOLS, 1, WARP, (int) sizeof(Q6KBlock), true, true>(w, x, y, n_in, n_out);
+                });
+            return;
+        }
         s->parallel_for<dpct_kernel_name<class native_mmvq_q6k_wide_a2, dpct_kernel_scalar<NCOLS>>>(
             sycl::nd_range<3>(sycl::range(1, 1, blocks) * sycl::range(1, WARPS, WARP), sycl::range(1, WARPS, WARP)),
             [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] {
@@ -3434,6 +3458,16 @@ void native_q6_k_mmvq(const void* weights, const void* x_q8_1, float* y,
     static const int wide_maxc = std::getenv("STRATA_MMVQ_WIDE_MAXC") ? std::atoi(std::getenv("STRATA_MMVQ_WIDE_MAXC")) : q6k_a2() ? 8 : 4;
     if (g_q6k_wide && ncols >= 1 && ncols <= wide_maxc && n_in % 256 == 0 && n_out >= wide_min) {
         const auto s = strata::q_of(stream);
+        if (q6k_swar() && ncols >= 6) {   // 4 columns, then the other 2-4 (see q6k_swar)
+            launch_q6k_wide<4>(weights, x_q8_1, y, n_in, n_out, s);
+            const void* x4 = static_cast<const Q81Block*>(x_q8_1) + std::size_t(4) * (n_in / Q8K);
+            float* y4 = y + std::size_t(4) * n_out;
+            switch (ncols) {
+                case 6: launch_q6k_wide<2>(weights, x4, y4, n_in, n_out, s); return;
+                case 7: launch_q6k_wide<3>(weights, x4, y4, n_in, n_out, s); return;
+                default: launch_q6k_wide<4>(weights, x4, y4, n_in, n_out, s); return;
+            }
+        }
         switch (ncols) {
             case 1: launch_q6k_wide<1>(weights, x_q8_1, y, n_in, n_out, s); return;
             case 2: launch_q6k_wide<2>(weights, x_q8_1, y, n_in, n_out, s); return;
