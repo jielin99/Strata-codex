@@ -1,0 +1,6 @@
+g1: all equal
+553ac32f017ae0be: 1-A, 2-B, 3-C, 6-C, 7-B, 8-A, 9-A, 10-B, 11-C, 13-A0
+
+g2: all equal
+1c1c19249884638f: 1-A, 2-B, 3-C, 6-C, 7-B, 8-A, 9-A, 10-B, 11-C, 13-A0
+Source: greedy.tsv; hash input = reasoning_content + LF + --- + LF + content, UTF-8.
