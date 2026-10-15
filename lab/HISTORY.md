@@ -22,3 +22,4 @@
 | 2026-10-15 | `plans/00-cleanup.md` | `results/00-cleanup.md` | worktree 已建；待清理对象在执行前已不存在（dmp 备份保留，未做哈希比对）；引擎 HEAD 和远端一致（29825274）；笔记本推送可行。结论里的「电源模式：平衡」是电源计划，不是设置里的电源模式（手册的查法错了，已在 01 和 README 改正） |
 | 2026-10-15 | `plans/01-decode-bound.md` | `results/01-decode-bound.md`，分析 `analysis/01-decode-bound.md` | 54 个请求 0 失败；读带宽 72 / 62 GB/s；verify 只用到带宽的约 20–40%（推断瓶颈在内核）；草稿约占 10%；1 小时内漂移 9–15% |
 | 2026-10-15 | （开发机，未用笔记本） | `analysis/02-kernel-code.md` | 读代码 + 140T 编译目标的 ISA + UHD 730 实测：稠密 GEMV 卡在指令数；Q6_K 的 sub_sat 换成逐位等价写法，指令 −45–53%，UHD 上 +13–73%；MoE 默认内核有寄存器溢出 |
+| 2026-10-15 | `plans/02-mmvq-q6k.md` | `results/02-mmvq-q6k.md`，分析 `analysis/02-kernel-code.md` 第 5 节 | 140T 上去掉 sub_sat 全部更快（1 列 +19–28%，3 列 +87–132%），校验值相同；Q6_K 有列数断崖（现状 5 列、去掉 sub_sat 后 6 列掉到约 5 GB/s），其他类型没有 |
