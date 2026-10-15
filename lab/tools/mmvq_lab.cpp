@@ -1,10 +1,12 @@
 // mmvq_lab: the engine's decode GEMV (strata::kernels::native_mmvq) on the IQ3_XXS model's dense shapes and types,
 // with a working set larger than the GPU's caches.
-//   mmvq_lab [working-set MiB=1024] [ms per case=300] [filter=all]
+//   mmvq_lab [working-set MiB=1024] [ms per case=300] [filter=all] [max columns=6]
 // Each case rotates through enough copies of its weight matrix to cover the working set, so every call reads its
 // weights from memory, not from a cache. One line per case: type, n_in x n_out (the GGUF's ne0 x ne1), columns,
 // microseconds per call, weight GB/s (GB = 1e9 bytes) and a checksum of the last output (the bytes are synthetic,
 // so the checksum only shows the call produced finite numbers). The engine's STRATA_MMVQ_* switches apply as usual.
+// MMVQ_LAB_DUMP=<file>: also write every case's last output (float32, in case order) to that file, so two runs
+// (for example with and without a switch) can be compared byte for byte.
 // Built against the engine's kernels (see lab/plans for the command line); it changes no engine file.
 #include "strata/kernels/native_mmvq.hpp"
 #include <sycl/sycl.hpp>
@@ -44,14 +46,17 @@ int main(int argc, char** argv) {
     const size_t ws_mib = argc > 1 ? (size_t) std::atoll(argv[1]) : 1024;
     const double ms_per_case = argc > 2 ? std::atof(argv[2]) : 300.0;
     const std::string filter = argc > 3 ? argv[3] : "all";
+    const int max_cols = argc > 4 ? std::atoi(argv[4]) : 6;
     sycl::queue* s = &dpct::get_in_order_queue();
     const sycl::device dev = s->get_device();
     std::printf("device: %s\n", dev.get_info<sycl::info::device::name>().c_str());
     std::printf("driver: %s\n", dev.get_info<sycl::info::device::driver_version>().c_str());
     std::printf("working set: %zu MiB, %.0f ms per case\n", ws_mib, ms_per_case);
     for (const char* k : {"STRATA_MMVQ_SG", "STRATA_MMVQ_PF", "STRATA_MMVQ_WIDE_RPW", "STRATA_MMVQ_A2", "STRATA_MMVQ_WIDE_K",
-                          "STRATA_MMVQ_WIDE_32", "STRATA_MMVQ_WAVE", "STRATA_MMVQ_RPW"})
+                          "STRATA_MMVQ_WIDE_32", "STRATA_MMVQ_WAVE", "STRATA_MMVQ_RPW", "STRATA_MMVQ_Q6_SWAR"})
         if (const char* v = std::getenv(k)) std::printf("env %s=%s\n", k, v);
+    FILE* dump = std::getenv("MMVQ_LAB_DUMP") ? std::fopen(std::getenv("MMVQ_LAB_DUMP"), "wb") : nullptr;
+    if (std::getenv("MMVQ_LAB_DUMP") && dump == nullptr) { std::fprintf(stderr, "mmvq_lab: cannot open MMVQ_LAB_DUMP\n"); return 1; }
     std::printf("tensor\ttype\tn_in\tn_out\tcols\tcopies\tus\tGB/s\tchecksum\n");
     for (const Case& c : kCases) {
         if (filter != "all" && filter != c.tensor && filter != c.type_name) continue;
@@ -72,7 +77,7 @@ int main(int argc, char** argv) {
             for (void* p : w) if (p) sycl::free(p, *s);
             continue;
         }
-        for (int nc = 1; nc <= 6; ++nc) {
+        for (int nc = 1; nc <= max_cols; ++nc) {
             std::vector<float> hx((size_t) nc * c.n_in);
             for (size_t i = 0; i < hx.size(); ++i) hx[i] = (float) ((i * 7919) % 1000) / 500.f - 1.f;
             float* x = sycl::malloc_device<float>(hx.size(), *s);
@@ -98,6 +103,7 @@ int main(int argc, char** argv) {
             s->memcpy(hy.data(), y, hy.size() * 4).wait();
             double cs = 0;
             for (float v : hy) cs += std::isfinite(v) ? std::fabs((double) v) : 1e30;
+            if (dump) std::fwrite(hy.data(), 4, hy.size(), dump);
             std::printf("%s\t%s\t%d\t%d\t%d\t%zu\t%.1f\t%.1f\t%.6e\n", c.tensor, c.type_name, c.n_in, c.n_out, nc, copies, us,
                         (double) wbytes / us / 1e3, cs);
             std::fflush(stdout);
@@ -105,5 +111,6 @@ int main(int argc, char** argv) {
         }
         for (void* p : w) sycl::free(p, *s);
     }
+    if (dump) std::fclose(dump);
     return 0;
 }
