@@ -1,0 +1,17 @@
+command: <repo>/sycl/tools/build_windows.bat
+returncode: 0
+elapsed_s: 340.33347779999895
+started: 2026-10-16T00:21:44.781577+08:00
+finished: 2026-10-16T00:27:25.116889+08:00
+engine_head: 7629f0b294bcaef91b971ac768a377f7a85518cd
+diff --stat 29825274 HEAD:
+sycl/src/kernels/cuda/native_mmvq.dp.cpp | 40 +++++++++++++++++++++++++++++---
+ 1 file changed, 37 insertions(+), 3 deletions(-)
+old_exe.size: 32693760 (build.json:6)
+old_exe.mtime: 2026-10-14T14:56:46.468059+08:00 (build.json:7)
+old_exe.sha256: 7b40f6b5062f83d98a4144f6c63e1d5f0a9eaa7401dd8ade357d20616b3853b0 (build.json:8)
+new_exe.size: 32892416 (build.json:15)
+new_exe.mtime: 2026-10-16T00:24:02.160723+08:00 (build.json:16)
+new_exe.sha256: 28ac70667e3929c2828a1e5d4b9cc971883c70b253a544d8586cdb8f35156a88 (build.json:17)
+source: build.json; full compiler output remains in private build.log
+Only the command, timings, revision diff and executable metadata are published.

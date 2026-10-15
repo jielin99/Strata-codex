@@ -1,0 +1,11 @@
+request	question	all_equal	different_segments	missing_text_segments	source
+1	1	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:2,answers.tsv:11,answers.tsv:20,answers.tsv:29,answers.tsv:38,answers.tsv:47,answers.tsv:56
+2	2	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:3,answers.tsv:12,answers.tsv:21,answers.tsv:30,answers.tsv:39,answers.tsv:48,answers.tsv:57
+3	3	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:4,answers.tsv:13,answers.tsv:22,answers.tsv:31,answers.tsv:40,answers.tsv:49,answers.tsv:58
+4	1	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:5,answers.tsv:14,answers.tsv:23,answers.tsv:32,answers.tsv:41,answers.tsv:50,answers.tsv:59
+5	2	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:6,answers.tsv:15,answers.tsv:24,answers.tsv:33,answers.tsv:42,answers.tsv:51,answers.tsv:60
+6	3	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:7,answers.tsv:16,answers.tsv:25,answers.tsv:34,answers.tsv:43,answers.tsv:52,answers.tsv:61
+7	1	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:8,answers.tsv:17,answers.tsv:26,answers.tsv:35,answers.tsv:44,answers.tsv:53,answers.tsv:62
+8	2	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:9,answers.tsv:18,answers.tsv:27,answers.tsv:36,answers.tsv:45,answers.tsv:54,answers.tsv:63
+9	3	无法核对	未判定	0-O,1-A,2-B,3-B,4-A,5-A,6-B	answers.tsv:10,answers.tsv:19,answers.tsv:28,answers.tsv:37,answers.tsv:46,answers.tsv:55,answers.tsv:64
+summary: groups=9; all_equal=0; different=0; unverified=9 (missing text; zero different does not mean equality)
