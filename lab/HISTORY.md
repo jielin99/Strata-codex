@@ -28,4 +28,4 @@
 | 2026-10-16 | （开发机，读代码 + Codex 外审） | `analysis/04-moe-hc-code.md` | hc 读走 BF16（SYCL 无 q8 路径）；默认 MoE 路径对 IQ2_XXS/IQ2_XS 不做多 token 复用，已有 `STRATA_EXPERT_SPLIT=1` 路径覆盖；05 测现成开关 |
 | 2026-10-16 | `plans/05-moe-hc-env.md` | `results/05-moe-hc-env.md`，判断 `analysis/05-moe-hc-env.md` | 5 个 MoE/hc 现成开关没有一个比默认快：`STRATA_EXPERT_SPLIT=1` 加权 +18.8%、`STRATA_GR_DOWN_SLICED=0` +7.6%、`STRATA_GR_NORM_SPLIT=0` +1.5%、lane 4/16 无差；默认三段差 ≤0.3%；72 请求 0 失败 |
 | 2026-10-16 | （开发机，复盘 + Codex 外审） | `analysis/06-retro.md` | 复盘：没先读 `docs/A770_SPEED_SPEC.md` 等已有调查、按好试而非时间占比选目标、每轮只带一个测量问题；⚠️ MoE 约占窗口 45%、每列约 +27 ms；第一个候选 `STRATA_Q2_SWAR=1`（功能分支 `870dee5e`）：UHD 730 上 48 层输出逐字节相同、MoE 窗口约 −12%，140T 编译目标主循环指令 4,711 → 1,843 |
-| 2026-10-16 | `plans/06-decide.md` | （待执行） | 同一轮比较 Q2_0 开关、`--mtp-q4 all`、全常驻（共享显存上限 75%），加贪心回答哈希核对；条件满足时日常配置打开 SWAR |
+| 2026-10-16 | `plans/06-decide.md` | `results/06-decide.md`，判断 `analysis/06-decide.md` | `STRATA_Q2_SWAR=1`：每 token 122.3 → 118.2 ms（约 +3.5% tok/s），三对相邻段都更快，140T 上 MoE 窗口 −11～−13%；`--mtp-q4 all` 慢 5.3%（草稿每窗口 +16 ms），不用；贪心回答 10 段哈希全同，日常配置已开 SWAR；D 组因手册判断条件写错没测（共享显存 75% 实际已生效，日常已是全常驻）；开发机发现 hc 读的 up 内核占约 75%，收尾移出行循环后 UHD 730 上 hc 读 −50～−59%、逐位相同 |
