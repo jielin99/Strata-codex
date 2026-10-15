@@ -26,3 +26,4 @@
 | 2026-10-15 | `plans/03-window-t.md` | `results/03-window-t.md`，分析 `analysis/03-window-t.md` | 生成窗口只有 T=1–4（T=4 占 61%）；T=6 是读短提示词的窗口，GPU 541 ms，Q6_K 的大跌在引擎里也出现；Q6_K 去掉 sub_sat 对生成约 +3.5%（不是 6–8%），对读短提示词影响大 |
 | 2026-10-16 | `plans/04-q6-swar-ab.md` | `results/04-q6-swar-ab.md`，判断 `analysis/04-q6-swar-ab.md` | 引擎开关 `STRATA_MMVQ_Q6_SWAR=1`（功能分支 `7629f0b2`）：生成每 token 130.6 → 123.1 ms（约 +6% tok/s），首 token 4.46 → 3.07 s；63 请求 0 失败；回答一致性因无文本、且采样每次不同而未能核对 |
 | 2026-10-16 | （开发机，读代码 + Codex 外审） | `analysis/04-moe-hc-code.md` | hc 读走 BF16（SYCL 无 q8 路径）；默认 MoE 路径对 IQ2_XXS/IQ2_XS 不做多 token 复用，已有 `STRATA_EXPERT_SPLIT=1` 路径覆盖；05 测现成开关 |
+| 2026-10-16 | `plans/05-moe-hc-env.md` | `results/05-moe-hc-env.md`，判断 `analysis/05-moe-hc-env.md` | 5 个 MoE/hc 现成开关没有一个比默认快：`STRATA_EXPERT_SPLIT=1` 加权 +18.8%、`STRATA_GR_DOWN_SLICED=0` +7.6%、`STRATA_GR_NORM_SPLIT=0` +1.5%、lane 4/16 无差；默认三段差 ≤0.3%；72 请求 0 失败 |
