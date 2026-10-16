@@ -1,0 +1,3 @@
+IQ3_S   /IQ4_NL   2560 x  640  84 calls: bitwise equal to v1 (371200 output floats written in all)
+IQ3_S   /IQ4_XS   2560 x  768  84 calls: bitwise equal to v1 (417280 output floats written in all)
+native_grouped_parity: 0 failures

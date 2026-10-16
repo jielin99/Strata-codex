@@ -1,0 +1,30 @@
+off t1..t4_us=510.900000, 863.300000, 1233.400000, 1501.900000 W_us=1261.356000
+on t1..t4_us=507.200000, 867.500000, 1222.200000, 1495.200000 W_us=1256.002000
+W(on)/W(off)=0.9957553616901176
+integrity=True; errors=[]
+keys=154; key_sets_equal=True
+checksum_differences=0; gu_checksum_differences=0
+native_grouped_parity=True
+winner=False
+T3 window reference (not used for selection):
+state	mem	phase	median_us_per_layer
+off	dram	all	1233.4
+off	dram	gu	821.6
+off	dram	down	395.9
+off	cached	all	1125.6
+off	cached	gu	751.4
+off	cached	down	379.8
+on	dram	all	1222.2
+on	dram	gu	814.4
+on	dram	down	407.3
+on	cached	all	1066.3
+on	cached	gu	717.2
+on	cached	down	382.8
+Per-file integrity:
+file	rows	all_rows	exit
+mp-1-off.tsv	462	154	0
+mp-1-on.tsv	462	154	0
+mp-2-on.tsv	462	154	0
+mp-2-off.tsv	462	154	0
+mp-3-off.tsv	462	154	0
+mp-3-on.tsv	462	154	0
