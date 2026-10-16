@@ -1,0 +1,6 @@
+variant	t1_us	t2_us	t3_us	t4_us	t5_us	t6_us	W_us	parity	checksums	candidate
+base	478.700	534.500	524.800	554.700	620.700	679.500	539.164	True	True	False
+v2	286.900	312.500	377.900	417.300	458.400	489.700	382.252	True	True	True
+r128	291.800	477.300	355.700	400.300	425.700	488.300	392.708	True	True	True
+r64	289.600	311.900	359.100	546.500	449.000	469.900	460.340	True	True	True
+selected: v2

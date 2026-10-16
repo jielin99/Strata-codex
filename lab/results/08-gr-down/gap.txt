@@ -1,0 +1,18 @@
+gap-base.txt:1: device: Intel(R) Arc(TM) 140T GPU (32GB); lines 33
+gap-v2.txt:1: device: Intel(R) Arc(TM) 140T GPU (32GB); lines 33
+gap-r128.txt:1: device: Intel(R) Arc(TM) 140T GPU (32GB); lines 33
+gap-r64.txt:1: device: Intel(R) Arc(TM) 140T GPU (32GB); lines 33
+base-exit 0
+v2-exit 0
+r128-exit 0
+r64-exit 0
+fc-v2 0
+fc-r128 0
+fc-r64 0
+gap-base.txt lines 33
+gap-v2.txt lines 33
+gap-r128.txt lines 33
+gap-r64.txt lines 33
+gap-fc-v2.txt: no differences; all parity criteria passed: True
+gap-fc-r128.txt: no differences; all parity criteria passed: True
+gap-fc-r64.txt: no differences; all parity criteria passed: True

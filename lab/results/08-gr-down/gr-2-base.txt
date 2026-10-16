@@ -1,0 +1,6 @@
+fused GR read, 1 tokens:   417.0 us (32 GB/s of weights)  checksum 156044a29131637f  sum 1.855644480e+01
+fused GR read, 2 tokens:   534.5 us (25 GB/s of weights)  checksum ada635710c63920a  sum 3.062891009e+01
+fused GR read, 3 tokens:   561.9 us (23 GB/s of weights)  checksum ac6937afab84574b  sum 4.408384525e+01
+fused GR read, 4 tokens:   588.3 us (22 GB/s of weights)  checksum 3441f4d29598c269  sum 9.496729514e+01
+fused GR read, 5 tokens:   630.0 us (21 GB/s of weights)  checksum 94c690071d72f1bc  sum 1.058140075e+02
+fused GR read, 6 tokens:   710.1 us (19 GB/s of weights)  checksum 0cce58250c149197  sum 1.292926359e+02
