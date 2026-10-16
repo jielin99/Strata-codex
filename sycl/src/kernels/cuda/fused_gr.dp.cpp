@@ -579,6 +579,87 @@ __dpct_inline__ void gr_down_reduce_kernel(GrMulti m) {
     if (r < LR) m.part[(size_t) k * LR + r] = x;   // split 0
     else m.a[k].inject_out[r - LR] = x;
 }
+// STRATA_GR_DOWN_V2=1 (off by default): gr_down_sliced_kernel for exactly TT tokens, the chunk loop outside the token
+// loop. Above, all four 16-byte weight chunks of a row and kFusedGrMaxT accumulators are live at once: on Xe-LPG
+// (arl-h AOT: 128 GRF of 32 bytes, SIMD32) the kernel spills 1.2-1.6 KB. Here one chunk is live and TT accumulators;
+// each token's sum still runs 0 + chunk 0 + chunk 1 + chunk 2 + chunk 3, then the same two xor steps and the same
+// partial slot, so the partials are bitwise those above. STRATA_GR_DOWN_ROWS=64 or 128 also splits a slice's 324 rows
+// over work-groups of that many rows (more work-groups, the same per-row work); any other value keeps one per slice.
+template <int TT>
+__dpct_inline__ void gr_down_sliced_v2_kernel(GrMulti m, float* tile, int rows) {
+    auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    const int t = (int) item.get_local_id(2), lane = t & 31, warp = t >> 5;
+    const int sl = (int) item.get_group(2), c0 = sl * GRS_COLS;
+    const int rb = (int) item.get_group(1) * rows, re = rb + rows < GRS_ROWS ? rb + rows : GRS_ROWS;
+    for (int i = t; i < TT * GRS_COLS; i += THREADS) {
+        const int k = i / GRS_COLS, c = i - k * GRS_COLS;
+        tile[i] = m.xn[(size_t) k * D + c0 + c];
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    const int rsub = lane >> 2, q = lane & 3;
+    const bool inj = m.a[0].w_inject != nullptr;
+    for (int r0 = rb; r0 < re; r0 += WARPS * 8) {
+        const int r = r0 + warp * 8 + rsub;
+        const bool ok = r < LR || (r < GRS_ROWS && inj);
+        const uint16_t* wrow = r < LR ? m.a[0].w_down + (size_t) r * D : m.a[0].w_inject + (size_t) (ok ? r - LR : 0) * D;
+        float acc[TT];
+#pragma unroll
+        for (int k = 0; k < TT; ++k) acc[k] = 0.0f;
+#pragma unroll
+        for (int cc = 0; cc < 4; ++cc) {
+            const sycl::uint4 wv = ok ? reinterpret_cast<const sycl::uint4*>(wrow + c0)[q + 4 * cc] : sycl::uint4(0, 0, 0, 0);
+#pragma unroll
+            for (int k = 0; k < TT; ++k) acc[k] += dot8(wv, tile + k * GRS_COLS + (q + 4 * cc) * 8);
+        }
+        auto sg = item.get_sub_group();
+#pragma unroll
+        for (int k = 0; k < TT; ++k) {
+            float v = acc[k];
+            v += sycl::permute_group_by_xor(sg, v, 1);
+            v += sycl::permute_group_by_xor(sg, v, 2);
+            if (q == 0 && ok) m.part2[((size_t) sl * kFusedGrMaxT + k) * GRS_ROWS + r] = v;
+        }
+    }
+}
+bool gr_down_v2() {   // STRATA_GR_DOWN_V2=1: gr_down_sliced_v2_kernel (opt-in)
+    static const bool v = std::getenv("STRATA_GR_DOWN_V2") != nullptr && std::atoi(std::getenv("STRATA_GR_DOWN_V2")) != 0;
+    return v;
+}
+int gr_down_rows() {   // STRATA_GR_DOWN_ROWS=64 / 128: rows per work-group of the v2 kernel; otherwise all 324
+    static const int v = [] {
+        const char* e = std::getenv("STRATA_GR_DOWN_ROWS");
+        const int n = e != nullptr ? std::atoi(e) : 0;
+        return n == 64 || n == 128 ? n : GRS_ROWS;
+    }();
+    return v;
+}
+// the v2 down for TT tokens: work-group (row group g, slice s) owns rows [g * rows, g * rows + rows) of slice s
+template <int TT>
+void launch_down_v2(sycl::queue* st, const GrMulti& m) {
+    const int rows = gr_down_rows();
+    const int ngr = (GRS_ROWS + rows - 1) / rows;
+    st->submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<float, 1> tl(sycl::range<1>((size_t) TT * GRS_COLS), cgh);
+        cgh.parallel_for<dpct_kernel_name<class gr_down_sliced_v2_k, dpct_kernel_scalar<TT>>>(
+            sycl::nd_range<3>(sycl::range(1, ngr, GRS_SLICES) * sycl::range(1, 1, THREADS), sycl::range(1, 1, THREADS)),
+            [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] {
+                gr_down_sliced_v2_kernel<TT>(m, tl.get_multi_ptr<sycl::access::decorated::no>().get(), rows);
+            });
+    });
+}
+void launch_down_v2_t(sycl::queue* st, const GrMulti& m) {   // m.T is 1..kFusedGrMaxT (checked by the caller)
+    static_assert(kFusedGrMaxT == 8, "the cases below cover 1..8 tokens");
+    switch (m.T) {
+    case 1: launch_down_v2<1>(st, m); break;
+    case 2: launch_down_v2<2>(st, m); break;
+    case 3: launch_down_v2<3>(st, m); break;
+    case 4: launch_down_v2<4>(st, m); break;
+    case 5: launch_down_v2<5>(st, m); break;
+    case 6: launch_down_v2<6>(st, m); break;
+    case 7: launch_down_v2<7>(st, m); break;
+    default: launch_down_v2<8>(st, m); break;
+    }
+}
 bool gr_down_sliced() {   // default (gr_bench: GR read 108.6 -> 76.5 us at 6 tokens); STRATA_GR_DOWN_SLICED=0: direct
     static const bool v = std::getenv("STRATA_GR_DOWN_SLICED") == nullptr || std::atoi(std::getenv("STRATA_GR_DOWN_SLICED")) != 0;
     return v;
@@ -1869,6 +1950,9 @@ bool fused_gr_read_multi(const FusedGrArgs* a, int n_tok, float* xn_scratch, voi
     if (gr_down_sliced()) {
         m.part2 = slice_partials(st);
         m.nsplit = 1;
+        if (gr_down_v2())
+            launch_down_v2_t(st, m);
+        else
         st->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<float, 1> tl(sycl::range<1>((size_t) kFusedGrMaxT * GRS_COLS), cgh);
             cgh.parallel_for<dpct_kernel_name<class gr_down_sliced_k>>(
