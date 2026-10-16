@@ -1,0 +1,9 @@
+gap-off.txt:1: device: Intel(R) Arc(TM) 140T GPU (32GB); lines 33
+gap-on.txt:1: device: Intel(R) Arc(TM) 140T GPU (32GB); lines 33
+off-exit 0
+on-exit 0
+fc-exit 0
+gap-off.txt lines 33
+gap-on.txt lines 33
+gap-fc.txt: no differences
+All four parity criteria passed: True

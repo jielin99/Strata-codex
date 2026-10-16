@@ -1,0 +1,40 @@
+{
+  "before": {
+    "ONEAPI_DEVICE_SELECTOR": "level_zero:gpu",
+    "ZES_ENABLE_SYSMAN": "1",
+    "UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS": "1",
+    "STRATA_VERIFY_DEVICE_PLAN": "1",
+    "STRATA_VERIFY_NO_HOST": "1",
+    "STRATA_STAGER_THREADS": "12",
+    "STRATA_MMVQ_Q6_SWAR": "1"
+  },
+  "after_q2": {
+    "ONEAPI_DEVICE_SELECTOR": "level_zero:gpu",
+    "ZES_ENABLE_SYSMAN": "1",
+    "UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS": "1",
+    "STRATA_VERIFY_DEVICE_PLAN": "1",
+    "STRATA_VERIFY_NO_HOST": "1",
+    "STRATA_STAGER_THREADS": "12",
+    "STRATA_MMVQ_Q6_SWAR": "1",
+    "STRATA_Q2_SWAR": "1"
+  },
+  "gr_up_criteria": {
+    "parity": true,
+    "greedy": true,
+    "all_three_pairs_faster": true,
+    "gr_checksums": true
+  },
+  "gr_up_added": true,
+  "final": {
+    "ONEAPI_DEVICE_SELECTOR": "level_zero:gpu",
+    "ZES_ENABLE_SYSMAN": "1",
+    "UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS": "1",
+    "STRATA_VERIFY_DEVICE_PLAN": "1",
+    "STRATA_VERIFY_NO_HOST": "1",
+    "STRATA_STAGER_THREADS": "12",
+    "STRATA_MMVQ_Q6_SWAR": "1",
+    "STRATA_Q2_SWAR": "1",
+    "STRATA_GR_UP_EPI": "1"
+  },
+  "gr_up_applied": true
+}
