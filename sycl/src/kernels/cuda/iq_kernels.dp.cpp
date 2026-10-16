@@ -1903,6 +1903,75 @@ __dpct_inline__ void native_gu_kernel(
     }
 }
 
+// STRATA_GU_GRID_SLM=1: native_gu_kernel for the gate/up formats with a codebook grid and a multi-entry dot (IQ3_XXS,
+// IQ3_S, IQ2_S). The grid is staged in local memory once per work-group and every entry, a group's last single one
+// too, goes through the multi-entry dot reading it there; native_gu_kernel's single entries (row_dot_lanes) read the
+// grid from global memory. row_dot_multi<., ., 1> gives row_dot_lanes' bits: the same grid values; two dp4a half
+// sums (IQ3_XXS / IQ3_S: added, the same exact int as vec_dot_*'s one chain over these 32 products; IQ2_S: two halves
+// in both), the same integer scale step, the same float expression and the same accumulation over k and lanes.
+template <int TY, int LANES>
+__dpct_inline__ void row_entries_g(const uint8_t* wr, const block_q8_1* x, int x_stride, const int32_t* ent_idx,
+                                   int e0, int e1, int nb, int sub, float* dst, size_t dst_stride, const void* grid) {
+    int e = e0;
+    for (; e + 4 <= e1; e += 4) {
+        const block_q8_1* xs[4] = {x + (size_t) ent_idx[e] * x_stride, x + (size_t) ent_idx[e + 1] * x_stride,
+                                   x + (size_t) ent_idx[e + 2] * x_stride, x + (size_t) ent_idx[e + 3] * x_stride};
+        float o[4];
+        row_dot_multi<TY, LANES, 4>(wr, xs, nb, sub, o, grid);
+        if (sub == 0)
+#pragma unroll
+            for (int i = 0; i < 4; ++i) dst[(size_t) (e + i) * dst_stride] = o[i];
+    }
+    if (e + 2 <= e1) {
+        const block_q8_1* xs[2] = {x + (size_t) ent_idx[e] * x_stride, x + (size_t) ent_idx[e + 1] * x_stride};
+        float o[2];
+        row_dot_multi<TY, LANES, 2>(wr, xs, nb, sub, o, grid);
+        if (sub == 0) { dst[(size_t) e * dst_stride] = o[0]; dst[(size_t) (e + 1) * dst_stride] = o[1]; }
+        e += 2;
+    }
+    for (; e < e1; ++e) {
+        const block_q8_1* xs[1] = {x + (size_t) ent_idx[e] * x_stride};
+        float o[1];
+        row_dot_multi<TY, LANES, 1>(wr, xs, nb, sub, o, grid);
+        if (sub == 0) dst[(size_t) e * dst_stride] = o[0];
+    }
+}
+
+template <int TG, int LN>
+__dpct_inline__ void native_gu_sg_kernel(
+    const unsigned long long *__restrict__ grp_ptr,
+    const int32_t *__restrict__ grp_start, const int32_t *__restrict__ n_groups,
+    const int32_t *__restrict__ ent_tok, const block_q8_1 *__restrict__ xq,
+    NativeExpertLayout L, float *__restrict__ gate, float *__restrict__ up) {
+    static_assert(TG == 18 || TG == 21 || TG == 22, "native_gu_sg_kernel: IQ3_XXS, IQ3_S, IQ2_S");
+    auto item_ct1 = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    const int ng = *n_groups;
+    if ((int) item_ct1.get_group(1) >= ng) return;   // uniform over the work-group, before the barrier
+    using GT = std::conditional_t<TG == 22, uint64_t, uint32_t>;
+    constexpr int GN = TG == 22 ? 1024 : TG == 21 ? 512 : 256;
+    auto& sg = *sycl::ext::oneapi::group_local_memory_for_overwrite<GT[GN]>(item_ct1.get_group());
+    for (int i = (int) item_ct1.get_local_id(2); i < GN; i += (int) item_ct1.get_local_range(2)) {
+        if constexpr (TG == 22) sg[i] = iq2s_grid[i];
+        else if constexpr (TG == 21) sg[i] = iq3s_grid[i];
+        else sg[i] = iq3xxs_grid[i];
+    }
+    item_ct1.barrier(sycl::access::fence_space::local_space);
+    const void* grid = &sg[0];
+    const int rib = item_ct1.get_local_id(2) / LN,
+              sub = item_ct1.get_local_id(2) % LN;
+    const int row = item_ct1.get_group(2) * (256 / LN) + rib; // 0 .. 2*n_ff
+    if (row >= 2 * L.n_ff) return;
+    const bool is_up = row >= L.n_ff;
+    const int r = is_up ? row - (int) L.n_ff : row;
+    const size_t off = (is_up ? L.up_off : 0) + (size_t) r * L.gu_row;
+    const int nb = (int) (L.n_embd / Fmt<TG>::qk), xb = (int) (L.n_embd / 32);
+    for (int g = (int) item_ct1.get_group(1); g < ng; g += (int) item_ct1.get_group_range(1)) {
+        const uint8_t* wr = (const uint8_t*) grp_ptr[g] + off;
+        const int e0 = grp_start[g], e1 = grp_start[g + 1];
+        row_entries_g<TG, LN>(wr, xq, xb, ent_tok, e0, e1, nb, sub, (is_up ? up : gate) + r, (size_t) L.n_ff, grid);
+    }
+}
+
 // native_gu_kernel with the group's entries taken GRP_NC at a time, each weight part decoded once per pass.
 // A group has at most one entry per token of the window (kVerifyMaxT = 8; setup writes --spec 4, and a split window
 // has halves of <= 4), so 4 takes such windows in one pass; 8 would take ~64-80 registers against ~48 (ptxas -v).
@@ -2874,6 +2943,9 @@ bool g_no_sub16_gu = env_on("STRATA_NO_SUB16_GU");
 // STRATA_Q2_SWAR=1 (off by default): a Q2_0 down on the lane kernels runs as kQ2Swar, the same bits without
 // byte_level_permute (see q2_byte_codes); STRATA_EXPERT_SPLIT's Split<42> path is left as it is
 bool g_q2_swar = env_on("STRATA_Q2_SWAR");
+// STRATA_GU_GRID_SLM=1 (off by default): the IQ3_XXS / IQ3_S / IQ2_S gate/up on the lane kernels runs as
+// native_gu_sg_kernel, the codebook grid read from local memory for every entry (the same bits)
+bool g_gu_grid_slm = env_on("STRATA_GU_GRID_SLM");
 // STRATA_IQ_STAGE_GRID=0 disables staging 64-bit i-quant codebook tables into shared memory
 bool g_stage_grid = [] {
     const char* v = std::getenv("STRATA_IQ_STAGE_GRID");
@@ -4172,10 +4244,34 @@ void launch_gu_port(unsigned groups, dpct::queue_ptr s, const unsigned long long
             native_gu_kernel<TG, LN>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
         });
 }
+template <int TG, int LN>
+void launch_gu_port_sg(unsigned groups, dpct::queue_ptr s, const unsigned long long *grp_ptr, const int32_t *grp_start,
+                       const int32_t *n_groups, const int32_t *ent_tok, const block_q8_1 *X,
+                       const NativeExpertLayout &L, float *gate, float *up) {
+    constexpr int ROWS = 256 / LN;
+    const unsigned gx = (unsigned) ((2 * L.n_ff + ROWS - 1) / ROWS);
+    auto exp_props = sycl::ext::oneapi::experimental::properties{sycl::ext::oneapi::experimental::use_root_sync};
+    s->parallel_for<dpct_kernel_name<class native_gu_port_sg, dpct_kernel_scalar<TG>, dpct_kernel_scalar<LN>>>(
+        sycl::nd_range<3>(sycl::range<3>(1, groups, (size_t) gx * 256), sycl::range<3>(1, 1, 256)), exp_props,
+        [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] {
+            native_gu_sg_kernel<TG, LN>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
+        });
+}
 template <int TG>
 void launch_gu_lanes(dpct::dim3 grid, dpct::queue_ptr s, const unsigned long long *grp_ptr, const int32_t *grp_start,
                      const int32_t *n_groups, const int32_t *ent_tok, const block_q8_1 *X,
                      const NativeExpertLayout &L, float *gate, float *up) {
+    if constexpr (TG == 18 || TG == 21 || TG == 22) {
+        if (g_gu_grid_slm) {   // STRATA_GU_GRID_SLM=1
+            switch (gu_lanes()) {
+                case 4: launch_gu_port_sg<TG, 4>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+                case 16: launch_gu_port_sg<TG, 16>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+                case 32: launch_gu_port_sg<TG, 32>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+                default: launch_gu_port_sg<TG, 8>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+            }
+            return;
+        }
+    }
     switch (gu_lanes()) {
         case 4: launch_gu_port<TG, 4>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
         case 16: launch_gu_port<TG, 16>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
