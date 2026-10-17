@@ -1,0 +1,23 @@
+problems: 0
+integrity: 18 exit codes, 12 stderr files, env-strata.txt
+
+equal outputs across the 4 runs (both builds):
+  gr: 6 keys with checksums, 0 differ
+  mp: 154 keys with checksums, 0 differ
+  mm: 156 keys with checksums, 0 differ
+  mm-1-a64.bin: 32782848 bytes (want 32782848), sha256 731ba759d1c313cda84c43008cc9534f2e3965737bea7517c68521d21e015684
+  mm-2-a32.bin: 32782848 bytes (want 32782848), sha256 731ba759d1c313cda84c43008cc9534f2e3965737bea7517c68521d21e015684
+  mm-3-a32.bin: 32782848 bytes (want 32782848), sha256 731ba759d1c313cda84c43008cc9534f2e3965737bea7517c68521d21e015684
+  mm-4-a64.bin: 32782848 bytes (want 32782848), sha256 731ba759d1c313cda84c43008cc9534f2e3965737bea7517c68521d21e015684
+  mmvq_lab dumps identical: True
+
+largest |difference| between the two runs of the same build (us):
+  gr a64 (run 4 / run 1 - 1): -0.0534 at T6
+  gr a32 (run 3 / run 2 - 1): +0.0206 at T5
+  gr: a32 / a64 - 1 over 6 keys: median -0.0059, min -0.0243, max +0.0173
+  mp a64 (run 4 / run 1 - 1): -0.2303 at G10x1 18/42 3 10 10 dram down
+  mp a32 (run 3 / run 2 - 1): +0.4117 at T2 16/42 8 17 20 cached all
+  mp: a32 / a64 - 1 over 462 keys: median -0.0271, min -0.3425, max +0.3625
+  mm a64 (run 4 / run 1 - 1): -0.2326 at attn_q Q4_K 2560 12288 2
+  mm a32 (run 3 / run 2 - 1): +0.3267 at attn_qkv Q4_K 2560 10240 4
+  mm: a32 / a64 - 1 over 156 keys: median -0.0829, min -0.3043, max +0.6691
