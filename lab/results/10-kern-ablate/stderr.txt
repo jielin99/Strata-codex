@@ -1,0 +1,2 @@
+ka-1.err: 0 bytes (source: ka-1.err, file size)
+ka-2.err: 0 bytes (source: ka-2.err, file size)

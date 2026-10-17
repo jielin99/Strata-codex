@@ -1,0 +1,66 @@
+ka-1.tsv: rule 1 integrity=True; rule 2 same=True
+ka-2.tsv: rule 1 integrity=True; rule 2 same=True
+Cross-run checksum differences: 0 / 58 aligned keys
+Maximum absolute relative us difference (run2/run1 - 1): +0.192930153322 (+19.293015%)
+ka-1.tsv:22: q4k	Q4_K	base	1	234.8	37.4%	62.8	1	64e757263c1b5552
+ka-2.tsv:22: q4k	Q4_K	base	1	280.1	20.6%	52.6	1	64e757263c1b5552
+Per-key us relative differences (run2/run1 - 1):
+part	type	variant	n	relative	sources
+moe	IQ2_XXS	base	25	+0.068417957263	ka-1.tsv:15, ka-2.tsv:15
+moe	IQ2_XXS	engine	25	-0.002442854650	ka-1.tsv:14, ka-2.tsv:14
+moe	IQ2_XXS	noact	25	+0.011154011154	ka-1.tsv:18, ka-2.tsv:18
+moe	IQ2_XXS	nogrid	25	+0.107125062282	ka-1.tsv:16, ka-2.tsv:16
+moe	IQ2_XXS	nosign	25	+0.072472594397	ka-1.tsv:17, ka-2.tsv:17
+moe	IQ2_XXS	now	25	+0.093672966311	ka-1.tsv:19, ka-2.tsv:19
+moe	IQ2_XXS	slm	25	+0.038042269188	ka-1.tsv:20, ka-2.tsv:20
+moe	IQ3_S	base	25	-0.026868437307	ka-1.tsv:8, ka-2.tsv:8
+moe	IQ3_S	engine	25	+0.016413373860	ka-1.tsv:7, ka-2.tsv:7
+moe	IQ3_S	noact	25	-0.007680320570	ka-1.tsv:11, ka-2.tsv:11
+moe	IQ3_S	nogrid	25	+0.002681364517	ka-1.tsv:9, ka-2.tsv:9
+moe	IQ3_S	nosign	25	+0.116038953420	ka-1.tsv:10, ka-2.tsv:10
+moe	IQ3_S	now	25	+0.093941456773	ka-1.tsv:12, ka-2.tsv:12
+moe	IQ3_S	slm	25	+0.116694124108	ka-1.tsv:13, ka-2.tsv:13
+q4k	Q4_K	base	1	+0.192930153322	ka-1.tsv:22, ka-2.tsv:22
+q4k	Q4_K	base	2	+0.073799025296	ka-1.tsv:27, ka-2.tsv:27
+q4k	Q4_K	base	3	+0.147814207650	ka-1.tsv:32, ka-2.tsv:32
+q4k	Q4_K	base	4	+0.033333333333	ka-1.tsv:37, ka-2.tsv:37
+q4k	Q4_K	engine	1	+0.073984720547	ka-1.tsv:21, ka-2.tsv:21
+q4k	Q4_K	engine	2	-0.056917688266	ka-1.tsv:26, ka-2.tsv:26
+q4k	Q4_K	engine	3	-0.000222915738	ka-1.tsv:31, ka-2.tsv:31
+q4k	Q4_K	engine	4	-0.074404185235	ka-1.tsv:36, ka-2.tsv:36
+q4k	Q4_K	noact	1	-0.040837696335	ka-1.tsv:24, ka-2.tsv:24
+q4k	Q4_K	noact	2	-0.066739209285	ka-1.tsv:29, ka-2.tsv:29
+q4k	Q4_K	noact	3	+0.070245398773	ka-1.tsv:34, ka-2.tsv:34
+q4k	Q4_K	noact	4	-0.082527705730	ka-1.tsv:39, ka-2.tsv:39
+q4k	Q4_K	noones	1	+0.066572237960	ka-1.tsv:23, ka-2.tsv:23
+q4k	Q4_K	noones	2	-0.004476040021	ka-1.tsv:28, ka-2.tsv:28
+q4k	Q4_K	noones	3	+0.034240561896	ka-1.tsv:33, ka-2.tsv:33
+q4k	Q4_K	noones	4	-0.047042052744	ka-1.tsv:38, ka-2.tsv:38
+q4k	Q4_K	now	1	-0.018587360595	ka-1.tsv:25, ka-2.tsv:25
+q4k	Q4_K	now	2	+0.143672692674	ka-1.tsv:30, ka-2.tsv:30
+q4k	Q4_K	now	3	-0.068714376187	ka-1.tsv:35, ka-2.tsv:35
+q4k	Q4_K	now	4	-0.066103379722	ka-1.tsv:40, ka-2.tsv:40
+q6k	Q6_K	base	1	+0.005456634118	ka-1.tsv:42, ka-2.tsv:42
+q6k	Q6_K	base	2	+0.054129464286	ka-1.tsv:48, ka-2.tsv:48
+q6k	Q6_K	base	3	+0.053073315231	ka-1.tsv:54, ka-2.tsv:54
+q6k	Q6_K	base	4	-0.004249608589	ka-1.tsv:60, ka-2.tsv:60
+q6k	Q6_K	engine	1	-0.005800837899	ka-1.tsv:41, ka-2.tsv:41
+q6k	Q6_K	engine	2	+0.038303693570	ka-1.tsv:47, ka-2.tsv:47
+q6k	Q6_K	engine	3	+0.090772693173	ka-1.tsv:53, ka-2.tsv:53
+q6k	Q6_K	engine	4	+0.009100529101	ka-1.tsv:59, ka-2.tsv:59
+q6k	Q6_K	noact	1	-0.009780775717	ka-1.tsv:43, ka-2.tsv:43
+q6k	Q6_K	noact	2	+0.022388059701	ka-1.tsv:49, ka-2.tsv:49
+q6k	Q6_K	noact	3	+0.029601905410	ka-1.tsv:55, ka-2.tsv:55
+q6k	Q6_K	noact	4	-0.024616368286	ka-1.tsv:61, ka-2.tsv:61
+q6k	Q6_K	now	1	+0.112884834664	ka-1.tsv:44, ka-2.tsv:44
+q6k	Q6_K	now	2	+0.019174898315	ka-1.tsv:50, ka-2.tsv:50
+q6k	Q6_K	now	3	-0.003490401396	ka-1.tsv:56, ka-2.tsv:56
+q6k	Q6_K	now	4	+0.012978257205	ka-1.tsv:62, ka-2.tsv:62
+q6k	Q6_K	pf2	1	-0.024214322514	ka-1.tsv:45, ka-2.tsv:45
+q6k	Q6_K	pf2	2	+0.051819438047	ka-1.tsv:51, ka-2.tsv:51
+q6k	Q6_K	pf2	3	+0.091189427313	ka-1.tsv:57, ka-2.tsv:57
+q6k	Q6_K	pf2	4	+0.024788732394	ka-1.tsv:63, ka-2.tsv:63
+q6k	Q6_K	pf4	1	+0.001893361021	ka-1.tsv:46, ka-2.tsv:46
+q6k	Q6_K	pf4	2	+0.042516588842	ka-1.tsv:52, ka-2.tsv:52
+q6k	Q6_K	pf4	3	+0.107915379130	ka-1.tsv:58, ka-2.tsv:58
+q6k	Q6_K	pf4	4	-0.005503890681	ka-1.tsv:64, ka-2.tsv:64

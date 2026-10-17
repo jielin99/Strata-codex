@@ -1,0 +1,64 @@
+device: Intel(R) Arc(TM) 140T GPU (32GB)
+driver: 1.15.37858
+rounds 5, launches 100
+env STRATA_MMVQ_Q6_SWAR=1
+env STRATA_Q2_SWAR=1
+part	type	variant	n	us	spread	GB/s	same	checksum
+moe	IQ3_S	engine	25	987.0	15.0%	35.7	-	1b5eeeff2316aec2
+moe	IQ3_S	base	25	971.4	19.5%	36.2	1	1b5eeeff2316aec2
+moe	IQ3_S	nogrid	25	671.3	18.7%	52.4	-	fa28ea647e1186bd
+moe	IQ3_S	nosign	25	852.3	17.3%	41.3	-	c0d4b9b207aa2384
+moe	IQ3_S	noact	25	898.4	11.9%	39.2	-	cb5f079d37509537
+moe	IQ3_S	now	25	587.6	21.2%	59.9	-	144f9576d0a4187c
+moe	IQ3_S	slm	25	728.4	15.4%	48.3	1	1b5eeeff2316aec2
+moe	IQ2_XXS	engine	25	573.1	32.8%	36.9	-	afdd0e632df76128
+moe	IQ2_XXS	base	25	510.1	10.5%	41.4	1	afdd0e632df76128
+moe	IQ2_XXS	nogrid	25	401.4	21.0%	52.6	-	e33009e045df963d
+moe	IQ2_XXS	nosign	25	492.6	18.2%	42.9	-	81e5731361983f7d
+moe	IQ2_XXS	noact	25	466.2	11.9%	45.3	-	87d1631176fdc8d2
+moe	IQ2_XXS	now	25	365.1	16.0%	57.8	-	f3c5284c6225af1f
+moe	IQ2_XXS	slm	25	449.5	19.9%	47.0	1	afdd0e632df76128
+q4k	Q4_K	engine	1	248.7	16.8%	59.3	-	64e757263c1b5552
+q4k	Q4_K	base	1	234.8	37.4%	62.8	1	64e757263c1b5552
+q4k	Q4_K	noones	1	211.8	9.3%	69.6	-	7744a1840de7b948
+q4k	Q4_K	noact	1	286.5	22.9%	51.5	-	361076c2cbe71e0e
+q4k	Q4_K	now	1	134.5	22.2%	109.6	-	b305fdd99a9a285f
+q4k	Q4_K	engine	2	342.6	25.2%	43.0	-	38440f54bcd5533b
+q4k	Q4_K	base	2	430.9	10.5%	34.2	1	38440f54bcd5533b
+q4k	Q4_K	noones	2	379.8	10.7%	38.8	-	c2f196a95449691b
+q4k	Q4_K	noact	2	275.7	19.0%	53.5	-	63eb790b6a2e042e
+q4k	Q4_K	now	2	210.2	14.4%	70.2	-	888b4dafbfc41b1a
+q4k	Q4_K	engine	3	448.6	14.1%	32.9	-	aed05220d8b70e2b
+q4k	Q4_K	base	3	366.0	24.0%	40.3	1	aed05220d8b70e2b
+q4k	Q4_K	noones	3	341.7	20.0%	43.2	-	794913e4ead71b73
+q4k	Q4_K	noact	3	326.0	13.7%	45.2	-	3e4ec40bcd9f12da
+q4k	Q4_K	now	3	315.8	23.6%	46.7	-	58cc0601c7439e40
+q4k	Q4_K	engine	4	516.1	17.1%	28.6	-	5220bfe2dee758f0
+q4k	Q4_K	base	4	465.0	27.0%	31.7	1	5220bfe2dee758f0
+q4k	Q4_K	noones	4	420.9	45.2%	35.0	-	93bec7bf975cd3ef
+q4k	Q4_K	noact	4	424.1	31.4%	34.8	-	eb2dbe31ac444c5f
+q4k	Q4_K	now	4	402.4	61.7%	36.6	-	b00610b864be9a4e
+q6k	Q6_K	engine	1	310.3	11.2%	69.3	-	134b7a7e7a203ece
+q6k	Q6_K	base	1	348.2	11.2%	61.8	1	134b7a7e7a203ece
+q6k	Q6_K	noact	1	296.5	5.8%	72.5	-	1263185701f959ab
+q6k	Q6_K	now	1	87.7	20.1%	245.2	-	165fb62d7c0497e0
+q6k	Q6_K	pf2	1	388.2	19.7%	55.4	1	134b7a7e7a203ece
+q6k	Q6_K	pf4	1	1637.3	2.9%	13.1	1	134b7a7e7a203ece
+q6k	Q6_K	engine	2	365.5	2.7%	58.8	-	f73745e97a2b82b7
+q6k	Q6_K	base	2	358.4	6.4%	60.0	1	f73745e97a2b82b7
+q6k	Q6_K	noact	2	294.8	5.0%	72.9	-	ea54ab31cc13d78c
+q6k	Q6_K	now	2	172.1	20.9%	125.0	-	3fc71b192228046b
+q6k	Q6_K	pf2	2	434.2	14.7%	49.5	1	f73745e97a2b82b7
+q6k	Q6_K	pf4	2	406.9	12.9%	52.9	1	f73745e97a2b82b7
+q6k	Q6_K	engine	3	399.9	10.7%	53.8	-	87e24b017f4779e9
+q6k	Q6_K	base	3	405.1	22.4%	53.1	1	87e24b017f4779e9
+q6k	Q6_K	noact	3	293.9	5.7%	73.2	-	b0486b562bea5909
+q6k	Q6_K	now	3	343.8	10.9%	62.5	-	8bb80653ce62a928
+q6k	Q6_K	pf2	3	454.0	8.7%	47.4	1	87e24b017f4779e9
+q6k	Q6_K	pf4	3	420.7	15.0%	51.1	1	87e24b017f4779e9
+q6k	Q6_K	engine	4	472.5	6.0%	45.5	-	01279efbec67253b
+q6k	Q6_K	base	4	447.1	26.0%	48.1	1	01279efbec67253b
+q6k	Q6_K	noact	4	312.8	5.7%	68.7	-	ab067f13a4bd0dba
+q6k	Q6_K	now	4	593.3	14.7%	36.2	-	ab15b197594d921f
+q6k	Q6_K	pf2	4	532.5	8.8%	40.4	1	01279efbec67253b
+q6k	Q6_K	pf4	4	526.9	8.5%	40.8	1	01279efbec67253b
