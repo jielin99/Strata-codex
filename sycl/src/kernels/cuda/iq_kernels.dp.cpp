@@ -1972,6 +1972,222 @@ __dpct_inline__ void native_gu_sg_kernel(
     }
 }
 
+// STRATA_GU_GRID_SLM2=1|2: native_gu_kernel for IQ2_XXS, IQ2_XS, IQ3_XXS, IQ3_S with the codebook grid staged in local
+// memory once per work-group. A group's single entries keep native_gu_kernel's dot (row_dot_lanes -> vec_dot_*), with
+// only the grid read from local memory: vec_dot_*_q8_1_g below are vec_dot_*_q8_1 with the table reads taken from
+// `grid`, every other expression and its order unchanged, so they give the same bits. The 4- and 2-entry batches
+// (IQ3_XXS, IQ3_S) stay on row_dot_multi as in native_gu_kernel, reading the global grid with =1 and the local one
+// with =2 (Multi<>::prep's G branch, the same values). On the 140T kern_ablate's copy of the single-entry dot with
+// the local grid was 13-20% faster and bitwise equal (lab/analysis/10-kern-ablate.md); STRATA_GU_GRID_SLM's
+// row_dot_multi<., ., 1> form gained 1.5-10% there on IQ3_S.
+__dpct_inline__ float vec_dot_iq2_xxs_q8_1_g(const void *__restrict__ vbq, const block_q8_1 *__restrict__ bq8_1,
+                                             const int &kbx, const int &iqs, const void *grid) {
+    const block_iq2_xxs* bq2 = (const block_iq2_xxs*) vbq + kbx;
+    const int q2 = get_int_b2(bq2->qs, iqs);
+    const uint8_t* aux8 = (const uint8_t*) &q2;
+    const uint32_t aux32 = get_int_b2(bq2->qs, iqs + 1);
+    int sumi = 0;
+#pragma unroll
+    for (int k0 = 0; k0 < 8; k0 += 2) {
+        const sycl::uint2 grid_pos =
+            ((const sycl::uint2 *)grid)[aux8[k0 / 2]];
+        const uint32_t signs = unpack_ksigns(aux32 >> (7 * k0 / 2));
+        const int signs0 = swar_ne4(signs & 0x08040201);
+        const int grid0 = swar_sub4(grid_pos.x() ^ signs0, signs0);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, k0 + 0);
+        sumi = ggml_cuda_dp4a(grid0, u0, sumi);
+        const int signs1 = swar_ne4(signs & 0x80402010);
+        const int grid1 = swar_sub4(grid_pos.y() ^ signs1, signs1);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, k0 + 1);
+        sumi = ggml_cuda_dp4a(grid1, u1, sumi);
+    }
+    const int ls = aux32 >> 27 | 1;
+    sumi = sumi * ls / 8;
+    const float d = sycl::vec<sycl::half, 1>(bq2->d)
+                        .convert<float, sycl::rounding_mode::automatic>()[0] *
+                    bq8_1[iqs / 2].ds[0];
+    return d * sumi;
+}
+__dpct_inline__ float vec_dot_iq2_xs_q8_1_g(const void *__restrict__ vbq, const block_q8_1 *__restrict__ bq8_1,
+                                            const int &kbx, const int &iqs, const void *grid) {
+    const block_iq2_xs* bq2 = (const block_iq2_xs*) vbq + kbx;
+    const uint32_t q2_lo = (uint32_t) get_int_b2(bq2->qs, iqs + 0), q2_hi = (uint32_t) get_int_b2(bq2->qs, iqs + 1);
+    const uint16_t q2[4] = {(uint16_t) q2_lo, (uint16_t) (q2_lo >> 16), (uint16_t) q2_hi, (uint16_t) (q2_hi >> 16)};
+    const int ls0 = bq2->scales[iqs / 2] & 0x0F;
+    const int ls1 = bq2->scales[iqs / 2] >> 4;
+    int sumi0 = 0, sumi1 = 0;
+#pragma unroll
+    for (int l0 = 0; l0 < 8; l0 += 2) {
+        const sycl::uint2 grid_pos =
+            ((const sycl::uint2 *)grid)[q2[l0 / 2] & 0x1FF];
+        const uint32_t signs = unpack_ksigns(q2[l0 / 2] >> 9);
+        const int signs0 = swar_ne4(signs & 0x08040201);
+        const int grid_l = swar_sub4(grid_pos.x() ^ signs0, signs0);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 0);
+        const int signs1 = swar_ne4(signs & 0x80402010);
+        const int grid_h = swar_sub4(grid_pos.y() ^ signs1, signs1);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 1);
+        if (l0 < 4) {
+            sumi0 = ggml_cuda_dp4a(grid_l, u0, sumi0);
+            sumi0 = ggml_cuda_dp4a(grid_h, u1, sumi0);
+        } else {
+            sumi1 = ggml_cuda_dp4a(grid_l, u0, sumi1);
+            sumi1 = ggml_cuda_dp4a(grid_h, u1, sumi1);
+        }
+    }
+    const int sumi = (sumi0 * ls0 + sumi1 * ls1 + (sumi0 + sumi1) / 2) / 4;
+    const float d = sycl::vec<sycl::half, 1>(bq2->d)
+                        .convert<float, sycl::rounding_mode::automatic>()[0] *
+                    bq8_1[iqs / 2].ds[0];
+    return d * sumi;
+}
+__dpct_inline__ float vec_dot_iq3_xxs_q8_1_g(const void *__restrict__ vbq, const block_q8_1 *__restrict__ bq8_1,
+                                             const int &kbx, const int &iqs, const void *grid) {
+    const block_iq3_xxs* bq3 = (const block_iq3_xxs*) vbq + kbx;
+    const sycl::int2 q3_packed =
+        sycl::int2(get_int_b2(bq3->qs, iqs), get_int_b2(bq3->qs, iqs + 1));
+    const uint8_t* q3 = (const uint8_t*) &q3_packed;
+    const uint32_t aux32 = get_int_b2(bq3->qs, QK_K / 16 + iqs / 2);
+    const uint32_t* G = (const uint32_t*) grid;
+    int sumi = 0;
+#pragma unroll
+    for (int l0 = 0; l0 < 8; l0 += 2) {
+        const sycl::int2 grid_pos =
+            sycl::int2(G[q3[l0 + 0]], G[q3[l0 + 1]]);
+        const uint32_t signs = unpack_ksigns(aux32 >> (7 * l0 / 2));
+        const int signs0 = swar_ne4(signs & 0x08040201);
+        const int grid_l = swar_sub4(grid_pos.x() ^ signs0, signs0);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 0);
+        const int signs1 = swar_ne4(signs & 0x80402010);
+        const int grid_h = swar_sub4(grid_pos.y() ^ signs1, signs1);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 1);
+        sumi = ggml_cuda_dp4a(grid_l, u0, sumi);
+        sumi = ggml_cuda_dp4a(grid_h, u1, sumi);
+    }
+    const int ls = aux32 >> 28;
+    sumi = (ls * sumi + sumi / 2) / 2;
+    const float d = sycl::vec<sycl::half, 1>(bq3->d)
+                        .convert<float, sycl::rounding_mode::automatic>()[0] *
+                    bq8_1[iqs / 2].ds[0];
+    return d * sumi;
+}
+__dpct_inline__ float vec_dot_iq3_s_q8_1_g(const void *__restrict__ vbq, const block_q8_1 *__restrict__ bq8_1,
+                                           const int &kbx, const int &iqs, const void *grid) {
+    const block_iq3_s* bq3 = (const block_iq3_s*) vbq + kbx;
+    const sycl::int2 qs_packed =
+        sycl::int2(get_int_b2(bq3->qs, iqs + 0), get_int_b2(bq3->qs, iqs + 1));
+    const uint8_t* qs = (const uint8_t*) &qs_packed;
+    const int qh = bq3->qh[iqs / 2];
+    const int signs_packed_32 = get_int_b2(bq3->signs, iqs / 2);
+    const uint8_t* signs_packed_8 = (const uint8_t*) &signs_packed_32;
+    const uint32_t* G = (const uint32_t*) grid;
+    int sumi = 0;
+#pragma unroll
+    for (int l0 = 0; l0 < 8; l0 += 2) {
+        const sycl::int2 grid_pos =
+            sycl::int2(G[qs[l0 + 0] | ((qh << (8 - l0)) & 0x100)],
+                       G[qs[l0 + 1] | ((qh << (7 - l0)) & 0x100)]);
+        const int signs0 = swar_ne4(((signs_packed_8[l0 / 2] & 0x03) << 7) |
+                ((signs_packed_8[l0 / 2] & 0x0C) << 21));
+        const int signs1 = swar_ne4(((signs_packed_8[l0 / 2] & 0x30) << 3) |
+                ((signs_packed_8[l0 / 2] & 0xC0) << 17));
+        const int grid_l = swar_sub4(grid_pos.x() ^ signs0, signs0);
+        const int grid_h = swar_sub4(grid_pos.y() ^ signs1, signs1);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 0);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 1);
+        sumi = ggml_cuda_dp4a(grid_l, u0, sumi);
+        sumi = ggml_cuda_dp4a(grid_h, u1, sumi);
+    }
+    sumi *= 1 + 2 * ((bq3->scales[iqs / 4] >> ((iqs << 1) & 0x04)) & 0x0F);
+    const float d = sycl::vec<sycl::half, 1>(bq3->d)
+                        .convert<float, sycl::rounding_mode::automatic>()[0] *
+                    bq8_1[iqs / 2].ds[0];
+    return d * sumi;
+}
+template <int TY> struct GridSlm;   // the codebook each STRATA_GU_GRID_SLM2 format stages, and its dot with `grid`
+template <> struct GridSlm<16> { using T = uint64_t; static constexpr int N = 256;
+    static T at(int i) { return iq2xxs_grid[i]; }
+    static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* g) { return vec_dot_iq2_xxs_q8_1_g(v, y, kbx, iqs, g); } };
+template <> struct GridSlm<17> { using T = uint64_t; static constexpr int N = 512;
+    static T at(int i) { return iq2xs_grid[i]; }
+    static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* g) { return vec_dot_iq2_xs_q8_1_g(v, y, kbx, iqs, g); } };
+template <> struct GridSlm<18> { using T = uint32_t; static constexpr int N = 256;
+    static T at(int i) { return iq3xxs_grid[i]; }
+    static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* g) { return vec_dot_iq3_xxs_q8_1_g(v, y, kbx, iqs, g); } };
+template <> struct GridSlm<21> { using T = uint32_t; static constexpr int N = 512;
+    static T at(int i) { return iq3s_grid[i]; }
+    static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* g) { return vec_dot_iq3_s_q8_1_g(v, y, kbx, iqs, g); } };
+// row_dot_lanes with the grid from `grid`
+template <int TY, int LANES>
+__dpct_inline__ float row_dot_lanes_g(const uint8_t *row, const block_q8_1 *x, int nb, int sub, const void *grid) {
+    using F = Fmt<TY>;
+    float s = 0.0f;
+    for (int k = sub; k < nb * F::ipb; k += LANES) {
+        const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
+        s += GridSlm<TY>::dot(row, x + kbx * (F::qk / 32), kbx, iqs, grid);
+    }
+    return lanes_sum<LANES>(s);
+}
+// row_entries with the single entries on row_dot_lanes_g; MS: the 4/2-entry batches read `grid` too (else the global)
+template <int TY, int LANES, bool MS>
+__dpct_inline__ void row_entries_g2(const uint8_t* wr, const block_q8_1* x, int x_stride, const int32_t* ent_idx,
+                                    int e0, int e1, int nb, int sub, float* dst, size_t dst_stride, const void* grid) {
+    int e = e0;
+    if constexpr (Multi<TY>::has) {
+        const void* mg = MS ? grid : nullptr;
+        for (; e + 4 <= e1; e += 4) {
+            const block_q8_1* xs[4] = {x + (size_t) ent_idx[e] * x_stride, x + (size_t) ent_idx[e + 1] * x_stride,
+                                       x + (size_t) ent_idx[e + 2] * x_stride, x + (size_t) ent_idx[e + 3] * x_stride};
+            float o[4];
+            row_dot_multi<TY, LANES, 4>(wr, xs, nb, sub, o, mg);
+            if (sub == 0)
+#pragma unroll
+                for (int i = 0; i < 4; ++i) dst[(size_t) (e + i) * dst_stride] = o[i];
+        }
+        if (e + 2 <= e1) {
+            const block_q8_1* xs[2] = {x + (size_t) ent_idx[e] * x_stride, x + (size_t) ent_idx[e + 1] * x_stride};
+            float o[2];
+            row_dot_multi<TY, LANES, 2>(wr, xs, nb, sub, o, mg);
+            if (sub == 0) { dst[(size_t) e * dst_stride] = o[0]; dst[(size_t) (e + 1) * dst_stride] = o[1]; }
+            e += 2;
+        }
+    }
+    for (; e < e1; ++e) {
+        const float v = row_dot_lanes_g<TY, LANES>(wr, x + (size_t) ent_idx[e] * x_stride, nb, sub, grid);
+        if (sub == 0) dst[(size_t) e * dst_stride] = v;
+    }
+}
+template <int TG, int LN, bool MS>
+__dpct_inline__ void native_gu_sg2_kernel(
+    const unsigned long long *__restrict__ grp_ptr,
+    const int32_t *__restrict__ grp_start, const int32_t *__restrict__ n_groups,
+    const int32_t *__restrict__ ent_tok, const block_q8_1 *__restrict__ xq,
+    NativeExpertLayout L, float *__restrict__ gate, float *__restrict__ up) {
+    static_assert(TG == 16 || TG == 17 || TG == 18 || TG == 21, "native_gu_sg2_kernel: IQ2_XXS, IQ2_XS, IQ3_XXS, IQ3_S");
+    auto item_ct1 = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    const int ng = *n_groups;
+    if ((int) item_ct1.get_group(1) >= ng) return;   // uniform over the work-group, before the barrier
+    using GT = typename GridSlm<TG>::T;
+    constexpr int GN = GridSlm<TG>::N;
+    auto& sg = *sycl::ext::oneapi::group_local_memory_for_overwrite<GT[GN]>(item_ct1.get_group());
+    for (int i = (int) item_ct1.get_local_id(2); i < GN; i += (int) item_ct1.get_local_range(2)) sg[i] = GridSlm<TG>::at(i);
+    item_ct1.barrier(sycl::access::fence_space::local_space);
+    const void* grid = &sg[0];
+    const int rib = item_ct1.get_local_id(2) / LN,
+              sub = item_ct1.get_local_id(2) % LN;
+    const int row = item_ct1.get_group(2) * (256 / LN) + rib; // 0 .. 2*n_ff
+    if (row >= 2 * L.n_ff) return;
+    const bool is_up = row >= L.n_ff;
+    const int r = is_up ? row - (int) L.n_ff : row;
+    const size_t off = (is_up ? L.up_off : 0) + (size_t) r * L.gu_row;
+    const int nb = (int) (L.n_embd / Fmt<TG>::qk), xb = (int) (L.n_embd / 32);
+    for (int g = (int) item_ct1.get_group(1); g < ng; g += (int) item_ct1.get_group_range(1)) {
+        const uint8_t* wr = (const uint8_t*) grp_ptr[g] + off;
+        const int e0 = grp_start[g], e1 = grp_start[g + 1];
+        row_entries_g2<TG, LN, MS>(wr, xq, xb, ent_tok, e0, e1, nb, sub, (is_up ? up : gate) + r, (size_t) L.n_ff, grid);
+    }
+}
+
 // native_gu_kernel with the group's entries taken GRP_NC at a time, each weight part decoded once per pass.
 // A group has at most one entry per token of the window (kVerifyMaxT = 8; setup writes --spec 4, and a split window
 // has halves of <= 4), so 4 takes such windows in one pass; 8 would take ~64-80 registers against ~48 (ptxas -v).
@@ -2946,6 +3162,13 @@ bool g_q2_swar = env_on("STRATA_Q2_SWAR");
 // STRATA_GU_GRID_SLM=1 (off by default): the IQ3_XXS / IQ3_S / IQ2_S gate/up on the lane kernels runs as
 // native_gu_sg_kernel, the codebook grid read from local memory for every entry (the same bits)
 bool g_gu_grid_slm = env_on("STRATA_GU_GRID_SLM");
+// STRATA_GU_GRID_SLM2=1|2 (off by default): the IQ2_XXS / IQ2_XS / IQ3_XXS / IQ3_S gate/up on the lane kernels runs as
+// native_gu_sg2_kernel, the single entries' dots reading the codebook grid from local memory; =2 also the 4/2-entry
+// batches (the same bits either way). Ahead of STRATA_GU_GRID_SLM for these four formats.
+int g_gu_grid_slm2 = [] {
+    const char* v = std::getenv("STRATA_GU_GRID_SLM2");
+    return v == nullptr ? 0 : v[0] == '1' ? 1 : v[0] == '2' ? 2 : 0;
+}();
 // STRATA_IQ_STAGE_GRID=0 disables staging 64-bit i-quant codebook tables into shared memory
 bool g_stage_grid = [] {
     const char* v = std::getenv("STRATA_IQ_STAGE_GRID");
@@ -4257,10 +4480,45 @@ void launch_gu_port_sg(unsigned groups, dpct::queue_ptr s, const unsigned long l
             native_gu_sg_kernel<TG, LN>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
         });
 }
+template <int TG, int LN, bool MS>
+void launch_gu_port_sg2(unsigned groups, dpct::queue_ptr s, const unsigned long long *grp_ptr, const int32_t *grp_start,
+                        const int32_t *n_groups, const int32_t *ent_tok, const block_q8_1 *X,
+                        const NativeExpertLayout &L, float *gate, float *up) {
+    constexpr int ROWS = 256 / LN;
+    const unsigned gx = (unsigned) ((2 * L.n_ff + ROWS - 1) / ROWS);
+    auto exp_props = sycl::ext::oneapi::experimental::properties{sycl::ext::oneapi::experimental::use_root_sync};
+    s->parallel_for<dpct_kernel_name<class native_gu_port_sg2, dpct_kernel_scalar<TG>, dpct_kernel_scalar<LN>,
+                                     dpct_kernel_scalar<MS>>>(
+        sycl::nd_range<3>(sycl::range<3>(1, groups, (size_t) gx * 256), sycl::range<3>(1, 1, 256)), exp_props,
+        [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] {
+            native_gu_sg2_kernel<TG, LN, MS>(grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
+        });
+}
+template <int TG, bool MS>
+void launch_gu_sg2_lanes(unsigned groups, dpct::queue_ptr s, const unsigned long long *grp_ptr, const int32_t *grp_start,
+                         const int32_t *n_groups, const int32_t *ent_tok, const block_q8_1 *X,
+                         const NativeExpertLayout &L, float *gate, float *up) {
+    switch (gu_lanes()) {
+        case 4: launch_gu_port_sg2<TG, 4, MS>(groups, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+        case 16: launch_gu_port_sg2<TG, 16, MS>(groups, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+        case 32: launch_gu_port_sg2<TG, 32, MS>(groups, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+        default: launch_gu_port_sg2<TG, 8, MS>(groups, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up); break;
+    }
+}
 template <int TG>
 void launch_gu_lanes(dpct::dim3 grid, dpct::queue_ptr s, const unsigned long long *grp_ptr, const int32_t *grp_start,
                      const int32_t *n_groups, const int32_t *ent_tok, const block_q8_1 *X,
                      const NativeExpertLayout &L, float *gate, float *up) {
+    if constexpr (TG == 16 || TG == 17 || TG == 18 || TG == 21) {
+        if (g_gu_grid_slm2 == 1) {   // STRATA_GU_GRID_SLM2=1
+            launch_gu_sg2_lanes<TG, false>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
+            return;
+        }
+        if (g_gu_grid_slm2 == 2) {   // STRATA_GU_GRID_SLM2=2
+            launch_gu_sg2_lanes<TG, true>(grid.y, s, grp_ptr, grp_start, n_groups, ent_tok, X, L, gate, up);
+            return;
+        }
+    }
     if constexpr (TG == 18 || TG == 21 || TG == 22) {
         if (g_gu_grid_slm) {   // STRATA_GU_GRID_SLM=1
             switch (gu_lanes()) {
