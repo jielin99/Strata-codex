@@ -1,0 +1,27 @@
+problems: 0
+add: none  (the switch of the group resolved faster than A by the most: its mean ms/token below A's by more than the larger range of the two groups; at most one; none with any problem)
+segments: 1-A 2-C 3-C 4-A 5-A 6-C (10-D0 / 11-D1 left out)
+greedy: g1 553ac32f017ae0be  g2 1c1c19249884638f
+windows and avg T per request the same in every segment: False (recorded only)
+  request 1: windows 34 34 34 34 34 34
+  request 2: windows 52 49 52 52 52 52
+  request 3: windows 50 50 51 49 50 48
+  request 4: windows 34 34 34 34 33 34
+  request 5: windows 53 56 53 54 55 53
+  request 6: windows 52 52 52 53 53 53
+  request 7: windows 34 34 34 34 34 33
+  request 8: windows 51 51 51 51 51 51
+  request 9: windows 51 51 49 51 51 50
+
+segment  ms/token  verify ms/window  draft ms/window  tokens/window  windows
+  1-A     103.861       203.43          23.82         2.189      411
+  2-C     105.600       206.92          24.13         2.189      411
+  3-C     105.580       207.41          24.15         2.194      410
+  4-A     107.675       210.49          24.54         2.184      412
+  5-A     107.255       209.26          24.29         2.179      413
+  6-C     110.167       217.62          25.21         2.206      408
+
+group means; range = (max - min) / mean over the group's 3 segments
+  A: ms/token 106.264 (range 0.0359)  verify ms/window 207.72 (range 0.0340)
+  C: ms/token 107.116 (range 0.0428)  verify ms/window 210.65 (range 0.0508)
+  C vs A: ms/token +0.0080 against the noise 0.0428 -> faster and resolved: False; verify ms/window +0.0141 (noise 0.0508, recorded only)

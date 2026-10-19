@@ -1,0 +1,37 @@
+segment	line	text
+1-A	13	strata generate: GPU 0: Intel(R) Arc(TM) 140T GPU (32GB), compute capability 12.74
+1-A	16	strata generate: expert cache auto: 41.66 GiB free, 1024 MiB reserved (+182 MiB for the draft head) -> 18434 slots
+1-A	17	strata generate: expert cache 24576 slots, 39.97 GiB of VRAM; policy is
+1-A	27	strata generate: token graph hit path: 24576 resident experts, decided on the device
+1-A	29	strata verify: window up to 4 tokens, 58.2 MiB of device buffers
+2-C	13	strata generate: GPU 0: Intel(R) Arc(TM) 140T GPU (32GB), compute capability 12.74
+2-C	16	strata generate: expert cache auto: 41.67 GiB free, 1024 MiB reserved (+182 MiB for the draft head) -> 18437 slots
+2-C	17	strata generate: expert cache 24576 slots, 39.97 GiB of VRAM; policy is
+2-C	27	strata generate: token graph hit path: 24576 resident experts, decided on the device
+2-C	29	strata verify: window up to 4 tokens, 58.2 MiB of device buffers
+3-C	13	strata generate: GPU 0: Intel(R) Arc(TM) 140T GPU (32GB), compute capability 12.74
+3-C	16	strata generate: expert cache auto: 41.67 GiB free, 1024 MiB reserved (+182 MiB for the draft head) -> 18437 slots
+3-C	17	strata generate: expert cache 24576 slots, 39.97 GiB of VRAM; policy is
+3-C	27	strata generate: token graph hit path: 24576 resident experts, decided on the device
+3-C	29	strata verify: window up to 4 tokens, 58.2 MiB of device buffers
+4-A	13	strata generate: GPU 0: Intel(R) Arc(TM) 140T GPU (32GB), compute capability 12.74
+4-A	16	strata generate: expert cache auto: 41.66 GiB free, 1024 MiB reserved (+182 MiB for the draft head) -> 18434 slots
+4-A	17	strata generate: expert cache 24576 slots, 39.97 GiB of VRAM; policy is
+4-A	27	strata generate: token graph hit path: 24576 resident experts, decided on the device
+4-A	29	strata verify: window up to 4 tokens, 58.2 MiB of device buffers
+5-A	13	strata generate: GPU 0: Intel(R) Arc(TM) 140T GPU (32GB), compute capability 12.74
+5-A	16	strata generate: expert cache auto: 41.67 GiB free, 1024 MiB reserved (+182 MiB for the draft head) -> 18438 slots
+5-A	17	strata generate: expert cache 24576 slots, 39.97 GiB of VRAM; policy is
+5-A	27	strata generate: token graph hit path: 24576 resident experts, decided on the device
+5-A	29	strata verify: window up to 4 tokens, 58.2 MiB of device buffers
+6-C	13	strata generate: GPU 0: Intel(R) Arc(TM) 140T GPU (32GB), compute capability 12.74
+6-C	16	strata generate: expert cache auto: 41.67 GiB free, 1024 MiB reserved (+182 MiB for the draft head) -> 18439 slots
+6-C	17	strata generate: expert cache 24576 slots, 39.97 GiB of VRAM; policy is
+6-C	27	strata generate: token graph hit path: 24576 resident experts, decided on the device
+6-C	29	strata verify: window up to 4 tokens, 58.2 MiB of device buffers
+10-D0	13	strata generate: GPU 0: Intel(R) Arc(TM) 140T GPU (32GB), compute capability 12.74
+10-D0	16	strata generate: expert cache auto: 41.53 GiB free, 1024 MiB reserved (+184 MiB for the draft head) -> 18372 slots
+10-D0	17	strata generate: expert cache 24514 slots, 39.86 GiB of VRAM; policy is
+10-D0	24	strata generate: 62 of 62 experts missing from VRAM (+ 0 in the prompt loan's slots) mirrored in pinned host memory (0.11 GiB, 0.1 s); the GPU reads them over PCIe
+10-D0	29	strata generate: token graph hit path: 24514 resident experts, decided on the device
+10-D0	31	strata verify: window up to 6 tokens, 69.5 MiB of device buffers
