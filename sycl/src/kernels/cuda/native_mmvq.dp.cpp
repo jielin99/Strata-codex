@@ -1710,6 +1710,119 @@ inline int q6k_wide_rpw() {
     static const int v = std::getenv("STRATA_MMVQ_WIDE_RPW") ? std::atoi(std::getenv("STRATA_MMVQ_WIDE_RPW")) : 1;
     return v;
 }
+// STRATA_MMVQ_XSLM=4|8|16 (off by default; on when atoi of the value is 4, 8 or 16): the wide kernels (Q6_K with
+// STRATA_MMVQ_Q6_SWAR=1, Q4_K, Q5_K, IQ4_XS) with the window's q8_1 activations copied once per work-group into local
+// memory, N rows (one sub-group each) per work-group; each column's reads are then local loads at 32-bit offsets.
+// Built for the Arc 140T (arl-h, no 64-bit integer add; oneAPI 2025.3 AOT), the K-quant global-read kernels spill at
+// every column count and each added column is mostly 64-bit address arithmetic and moves (16 of its ~255-370
+// instructions are dp4a). Windows whose activations need more than kXslmMaxBytes keep the global reads. The products
+// and sums are the global-read kernels' expressions; bitwise as measured (the source order alone does not promise it).
+inline int mmvq_xslm() {
+    static const int v = [] {
+        const char* e = std::getenv("STRATA_MMVQ_XSLM");
+        const int n = e ? std::atoi(e) : 0;
+        return n == 4 || n == 8 || n == 16 ? n : 0;
+    }();
+    return v;
+}
+constexpr std::size_t kXslmMaxBytes = 32768;
+inline bool xslm_fits(int n_in, int ncols) { return std::size_t(ncols) * (n_in / Q8K) * sizeof(Q81Block) <= kXslmMaxBytes; }
+// the work-group copies the ncols columns' q8_1 blocks (contiguous, 9 dwords each) into xs; every work-item takes
+// part in the barrier, so the caller returns for rows past n_out only after this
+template <int NWG>
+__dpct_inline__ void xslm_stage(const Q81Block* x, int n_dw, uint32_t* xs) {
+    auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    const uint32_t* xg = reinterpret_cast<const uint32_t*>(x);
+    for (int i = int(item.get_local_id(1)) * WARP + int(item.get_local_id(2)); i < n_dw; i += NWG * WARP) xs[i] = xg[i];
+    sycl::group_barrier(item.get_group());
+}
+__dpct_inline__ float xslm_d(uint32_t dw) { return (float) sycl::bit_cast<sycl::half>((uint16_t) (dw & 0xffffu)); }   // ds[0]
+__dpct_inline__ sycl::int4 xslm_q16(const uint32_t* xs, int at) {
+    return sycl::int4((int) xs[at], (int) xs[at + 1], (int) xs[at + 2], (int) xs[at + 3]);
+}
+// native_mmvq_q6k_wide_kernel<NCOLS, 1, WARP, sizeof(Q6KBlock), true, true> with the activations from xs
+template <int NCOLS, int NWG>
+void native_mmvq_q6k_xslm_kernel(const Q6KBlock* __restrict__ w, const Q81Block* __restrict__ x,
+                                 float* __restrict__ y, int n_in, int n_out, uint32_t* xs) {
+    auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    const int lane = int(item.get_local_id(2)), warp = int(item.get_local_id(1));
+    const int row0 = int(item.get_group(2)) * NWG + warp;
+    const int blocks_per_row = n_in / QK, x_stride = n_in / Q8K;
+    xslm_stage<NWG>(x, NCOLS * x_stride * 9, xs);
+    if (row0 >= n_out) return;
+    const int g = lane & 7, sub = lane >> 3;
+    const int vh_shift = 2 * ((g & 3) >> 1);
+    const int qh4_idx = 2 * (g >> 2) + (g & 1);
+    const int scale_offset = 8 * (g >> 2) + (g & 3);
+    const int bq8_offset = 4 * (g >> 2) + ((g & 3) >> 1);
+    const int u_int4 = g & 1;
+    float acc[NCOLS] = {};
+    for (int kbx = sub; kbx < blocks_per_row; kbx += WARP / 8) {
+        const int kby = kbx * (QK / Q8K);
+        const Q6KBlock* b = reinterpret_cast<const Q6KBlock*>(reinterpret_cast<const uint8_t*>(w) +
+            (std::size_t(row0) * blocks_per_row + kbx) * sizeof(Q6KBlock));
+        const sycl::int4 ql4 = load16_a2(b->ql + 16 * g);
+        const sycl::int4 qh4 = load16_a2(b->qh + 16 * qh4_idx);
+        const float d = b->d;
+        const float dsc0 = d * (float) b->scales[scale_offset], dsc1 = d * (float) b->scales[scale_offset + 4];
+        sycl::int4 u0[NCOLS], u1[NCOLS];
+        float ds0[NCOLS], ds1[NCOLS];
+#pragma unroll
+        for (int j = 0; j < NCOLS; ++j) {   // block xb[0] at dword `at`, xb[2] 18 dwords on; qs from dword 1
+            const int at = (j * x_stride + kby + bq8_offset) * 9;
+            u0[j] = xslm_q16(xs, at + 1 + 4 * u_int4);
+            u1[j] = xslm_q16(xs, at + 19 + 4 * u_int4);
+            ds0[j] = xslm_d(xs[at]); ds1[j] = xslm_d(xs[at + 18]);
+        }
+        const int vl[4] = {ql4.x(), ql4.y(), ql4.z(), ql4.w()};
+        const int vh[4] = {qh4.x() >> vh_shift, qh4.y() >> vh_shift, qh4.z() >> vh_shift, qh4.w() >> vh_shift};
+        int vi0[4], vi1[4];
+#pragma unroll
+        for (int p = 0; p < 4; ++p) {
+            vi0[p] = (int) (((((uint32_t) vl[p] & 0x0f0f0f0fu) | (((uint32_t) vh[p] << 4) & 0x30303030u)) | 0x80808080u) - 0x20202020u) ^ 0x80808080u;
+            vi1[p] = (int) (((((uint32_t) vl[p] >> 4 & 0x0f0f0f0fu) | ((((uint32_t) vh[p] >> 4) << 4) & 0x30303030u)) | 0x80808080u) - 0x20202020u) ^ 0x80808080u;
+        }
+#pragma unroll
+        for (int j = 0; j < NCOLS; ++j) {
+            int s0 = 0, s1 = 0;
+            s0 = strata::dp4a(vi0[0], u0[j].x(), s0); s0 = strata::dp4a(vi0[1], u0[j].y(), s0);
+            s0 = strata::dp4a(vi0[2], u0[j].z(), s0); s0 = strata::dp4a(vi0[3], u0[j].w(), s0);
+            s1 = strata::dp4a(vi1[0], u1[j].x(), s1); s1 = strata::dp4a(vi1[1], u1[j].y(), s1);
+            s1 = strata::dp4a(vi1[2], u1[j].z(), s1); s1 = strata::dp4a(vi1[3], u1[j].w(), s1);
+            acc[j] += ds0[j] * dsc0 * (float) s0 + ds1[j] * dsc1 * (float) s1;
+        }
+    }
+    auto sg = item.get_sub_group();
+#pragma unroll
+    for (int j = 0; j < NCOLS; ++j) {
+        float v = acc[j];
+#pragma unroll
+        for (int o = WARP / 2; o > 0; o >>= 1) v += sycl::permute_group_by_xor(sg, v, o);
+        if (lane == 0) y[std::size_t(j) * n_out + row0] = v;
+    }
+}
+template <int NCOLS, int NWG>
+void launch_q6k_xslm(const Q6KBlock* w, const Q81Block* x, float* y, int n_in, int n_out, dpct::queue_ptr s) {
+    const unsigned blocks = unsigned((std::size_t(n_out) + NWG - 1) / NWG);
+    const std::size_t n_dw = std::size_t(NCOLS) * (n_in / Q8K) * 9;
+    s->submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<uint32_t, 1> xs(sycl::range<1>(n_dw), cgh);
+        cgh.parallel_for<dpct_kernel_name<class native_mmvq_q6k_xslm, dpct_kernel_scalar<NCOLS>, dpct_kernel_scalar<NWG>>>(
+            sycl::nd_range<3>(sycl::range(1, 1, blocks) * sycl::range(1, NWG, WARP), sycl::range(1, NWG, WARP)),
+            [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] {
+                native_mmvq_q6k_xslm_kernel<NCOLS, NWG>(w, x, y, n_in, n_out, xs.get_multi_ptr<sycl::access::decorated::no>().get());
+            });
+    });
+}
+template <int NCOLS>
+bool try_q6k_xslm(const Q6KBlock* w, const Q81Block* x, float* y, int n_in, int n_out, dpct::queue_ptr s) {
+    const int nwg = mmvq_xslm();
+    if (nwg == 0 || !xslm_fits(n_in, NCOLS)) return false;
+    if (nwg == 4) launch_q6k_xslm<NCOLS, 4>(w, x, y, n_in, n_out, s);
+    else if (nwg == 8) launch_q6k_xslm<NCOLS, 8>(w, x, y, n_in, n_out, s);
+    else launch_q6k_xslm<NCOLS, 16>(w, x, y, n_in, n_out, s);
+    return true;
+}
 template <int NCOLS>
 void launch_q6k_wide(const void* weights, const void* x_q8_1, float* y, int n_in, int n_out, dpct::queue_ptr s) {
     const auto* w = static_cast<const Q6KBlock*>(weights);
@@ -1725,6 +1838,9 @@ void launch_q6k_wide(const void* weights, const void* x_q8_1, float* y, int n_in
             return; }
         STRATA_Q6PF(2) STRATA_Q6PF(3) STRATA_Q6PF(4) STRATA_Q6PF(6)
 #undef STRATA_Q6PF
+    }
+    if constexpr (NCOLS <= 5) {   // with SWAR, 6-8 columns arrive here as 4 + the rest (native_q6_k_mmvq)
+        if (rpw == 1 && q6k_a2() && q6k_swar() && try_q6k_xslm<NCOLS>(w, x, y, n_in, n_out, s)) return;
     }
     if (rpw == 1 && q6k_a2()) {
         const unsigned blocks = unsigned((std::size_t(n_out) + WARPS - 1) / WARPS);
@@ -1804,6 +1920,14 @@ struct WideQ4K {
         return da * (r.dl * (float) dp4a4(r.lo, ua, 0) - r.ml * (float) dp4a4(ones, ua, 0)) +
                dc * (r.dh * (float) dp4a4(r.hi, uc, 0) - r.mh * (float) dp4a4(ones, uc, 0));
     }
+    static float apply_l(const W& r, const uint32_t* xs, int at) {   // apply, the column's blocks from local memory at dword `at`
+        const int a = at + 9 * r.sb, c = a + 9;
+        const sycl::int4 ua = xslm_q16(xs, a + 1 + 4 * r.half), uc = xslm_q16(xs, c + 1 + 4 * r.half);
+        const sycl::int4 ones(0x01010101, 0x01010101, 0x01010101, 0x01010101);
+        const float da = xslm_d(xs[a]), dc = xslm_d(xs[c]);
+        return da * (r.dl * (float) dp4a4(r.lo, ua, 0) - r.ml * (float) dp4a4(ones, ua, 0)) +
+               dc * (r.dh * (float) dp4a4(r.hi, uc, 0) - r.mh * (float) dp4a4(ones, uc, 0));
+    }
 };
 struct WideQ5K {
     using Block = Q5KBlock;
@@ -1824,6 +1948,7 @@ struct WideQ5K {
         return r;
     }
     static float apply(const W& r, const Q81Block* xb) { return WideQ4K::apply(r, xb); }
+    static float apply_l(const W& r, const uint32_t* xs, int at) { return WideQ4K::apply_l(r, xs, at); }
 };
 __dpct_inline__ uint32_t iq4_lut4(uint32_t q4) {   // four nibbles -> four codebook bytes, codebook in registers
     constexpr uint32_t t0 = 0xBFAD9881u, t1 = 0xF6EADDCFu, t2 = 0x26190D01u, t3 = 0x71594535u;
@@ -1855,6 +1980,10 @@ struct WideIQ4XS {
     static float apply(const W& r, const Q81Block* xb) {
         const Q81Block* a = xb + r.sb;
         return r.d * (float) a->ds[0] * (float) dp4a4(r.hi, ld_q8_16(a, 1), dp4a4(r.lo, ld_q8_16(a, 0), 0));
+    }
+    static float apply_l(const W& r, const uint32_t* xs, int at) {
+        const int a = at + 9 * r.sb;
+        return r.d * xslm_d(xs[a]) * (float) dp4a4(r.hi, xslm_q16(xs, a + 5), dp4a4(r.lo, xslm_q16(xs, a + 1), 0));
     }
 };
 template <typename F, int NCOLS>
@@ -1891,6 +2020,55 @@ void launch_wide(const void* weights, const void* x_q8_1, float* y, int n_in, in
         sycl::nd_range<3>(sycl::range(1, 1, blocks) * sycl::range(1, WARPS, WARP), sycl::range(1, WARPS, WARP)),
         [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] { native_mmvq_wide_kernel<F, NCOLS>(w, x, y, n_in, n_out); });
 }
+// native_mmvq_wide_kernel with the activations from local memory (STRATA_MMVQ_XSLM), NWG rows per work-group
+template <typename F, int NCOLS, int NWG>
+void native_mmvq_wide_xslm_kernel(const typename F::Block* __restrict__ w, const Q81Block* __restrict__ x,
+                                  float* __restrict__ y, int n_in, int n_out, uint32_t* xs) {
+    auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    const int lane = int(item.get_local_id(2)), warp = int(item.get_local_id(1));
+    const int row = int(item.get_group(2)) * NWG + warp;
+    const int blocks_per_row = n_in / QK, x_stride = n_in / Q8K;
+    xslm_stage<NWG>(x, NCOLS * x_stride * 9, xs);
+    if (row >= n_out) return;
+    const int g = lane & 7, sub = lane >> 3;
+    const typename F::Block* wr = w + std::size_t(row) * blocks_per_row;
+    float acc[NCOLS] = {};
+    for (int kbx = sub; kbx < blocks_per_row; kbx += 4) {
+        const typename F::W wv = F::load(wr + kbx, g);
+#pragma unroll
+        for (int j = 0; j < NCOLS; ++j) acc[j] += F::apply_l(wv, xs, (j * x_stride + kbx * (QK / Q8K)) * 9);
+    }
+    auto sg = item.get_sub_group();
+#pragma unroll
+    for (int j = 0; j < NCOLS; ++j) {
+        float v = acc[j];
+#pragma unroll
+        for (int o = WARP / 2; o > 0; o >>= 1) v += sycl::permute_group_by_xor(sg, v, o);
+        if (lane == 0) y[std::size_t(j) * n_out + row] = v;
+    }
+}
+template <typename F, int NCOLS, int NWG>
+void launch_wide_xslm_n(const void* weights, const void* x_q8_1, float* y, int n_in, int n_out, dpct::queue_ptr s) {
+    const auto* w = static_cast<const typename F::Block*>(weights);
+    const auto* x = static_cast<const Q81Block*>(x_q8_1);
+    const unsigned blocks = unsigned((std::size_t(n_out) + NWG - 1) / NWG);
+    const std::size_t n_dw = std::size_t(NCOLS) * (n_in / Q8K) * 9;
+    s->submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<uint32_t, 1> xs(sycl::range<1>(n_dw), cgh);
+        cgh.parallel_for<dpct_kernel_name<class native_mmvq_wide_xslm, F, dpct_kernel_scalar<NCOLS>, dpct_kernel_scalar<NWG>>>(
+            sycl::nd_range<3>(sycl::range(1, 1, blocks) * sycl::range(1, NWG, WARP), sycl::range(1, NWG, WARP)),
+            [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] {
+                native_mmvq_wide_xslm_kernel<F, NCOLS, NWG>(w, x, y, n_in, n_out, xs.get_multi_ptr<sycl::access::decorated::no>().get());
+            });
+    });
+}
+template <typename F, int NCOLS>
+void launch_wide_xslm(const void* weights, const void* x_q8_1, float* y, int n_in, int n_out, dpct::queue_ptr s) {
+    const int nwg = mmvq_xslm();
+    if (nwg == 4) launch_wide_xslm_n<F, NCOLS, 4>(weights, x_q8_1, y, n_in, n_out, s);
+    else if (nwg == 8) launch_wide_xslm_n<F, NCOLS, 8>(weights, x_q8_1, y, n_in, n_out, s);
+    else launch_wide_xslm_n<F, NCOLS, 16>(weights, x_q8_1, y, n_in, n_out, s);
+}
 inline bool wide_k() {   // STRATA_MMVQ_WIDE_K=0: Q4_K/Q5_K/IQ4_XS through the multi kernel (the old path)
     static const bool v = std::getenv("STRATA_MMVQ_WIDE_K") == nullptr || std::atoi(std::getenv("STRATA_MMVQ_WIDE_K")) != 0;
     return v;
@@ -1899,6 +2077,18 @@ template <typename F>
 bool try_wide(const void* weights, const void* x_q8_1, float* y, int n_in, int n_out, int ncols, void* stream) {
     if (!wide_k() || ncols < 1 || ncols > 8 || n_in % QK != 0) return false;
     const auto s = strata::q_of(stream);
+    if (mmvq_xslm() != 0 && xslm_fits(n_in, ncols)) {   // STRATA_MMVQ_XSLM
+        switch (ncols) {
+            case 1: launch_wide_xslm<F, 1>(weights, x_q8_1, y, n_in, n_out, s); return true;
+            case 2: launch_wide_xslm<F, 2>(weights, x_q8_1, y, n_in, n_out, s); return true;
+            case 3: launch_wide_xslm<F, 3>(weights, x_q8_1, y, n_in, n_out, s); return true;
+            case 4: launch_wide_xslm<F, 4>(weights, x_q8_1, y, n_in, n_out, s); return true;
+            case 5: launch_wide_xslm<F, 5>(weights, x_q8_1, y, n_in, n_out, s); return true;
+            case 6: launch_wide_xslm<F, 6>(weights, x_q8_1, y, n_in, n_out, s); return true;
+            case 7: launch_wide_xslm<F, 7>(weights, x_q8_1, y, n_in, n_out, s); return true;
+            default: launch_wide_xslm<F, 8>(weights, x_q8_1, y, n_in, n_out, s); return true;
+        }
+    }
     switch (ncols) {
         case 1: launch_wide<F, 1>(weights, x_q8_1, y, n_in, n_out, s); return true;
         case 2: launch_wide<F, 2>(weights, x_q8_1, y, n_in, n_out, s); return true;
