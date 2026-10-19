@@ -568,6 +568,33 @@ __dpct_inline__ void gr_down_sliced_kernel(GrMulti m, float* tile) {
         }
     }
 }
+// STRATA_GR_RED_BATCH=1 (off by default): gr_down_reduce_kernel with a thread's 80 slice partials loaded 16 at a
+// time ahead of their adds (one thread an output: the loads of a batch overlap instead of following each add). The same
+// adds in the same order from 0: bitwise gr_down_reduce_kernel.
+__dpct_inline__ void gr_down_reduce_batch_kernel(GrMulti m) {
+    auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    const int i = (int) item.get_global_id(2);
+    if (i >= m.T * GRS_ROWS) return;
+    const int k = i / GRS_ROWS, r = i - k * GRS_ROWS;
+    if (r >= LR && m.a[0].w_inject == nullptr) return;
+    constexpr int B = 16;
+    static_assert(GRS_SLICES % B == 0, "whole batches");
+    const float* p = m.part2 + (size_t) k * GRS_ROWS + r;
+    float x = 0.0f;
+    for (int s0 = 0; s0 < GRS_SLICES; s0 += B) {
+        float v[B];
+#pragma unroll
+        for (int j = 0; j < B; ++j) v[j] = p[(size_t) (s0 + j) * kFusedGrMaxT * GRS_ROWS];
+#pragma unroll
+        for (int j = 0; j < B; ++j) x += v[j];
+    }
+    if (r < LR) m.part[(size_t) k * LR + r] = x;   // split 0
+    else m.a[k].inject_out[r - LR] = x;
+}
+bool gr_red_batch() {   // STRATA_GR_RED_BATCH=1: gr_down_reduce_batch_kernel (opt-in)
+    static const bool v = std::getenv("STRATA_GR_RED_BATCH") != nullptr && std::atoi(std::getenv("STRATA_GR_RED_BATCH")) != 0;
+    return v;
+}
 __dpct_inline__ void gr_down_reduce_kernel(GrMulti m) {
     auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
     const int i = (int) item.get_global_id(2);
@@ -852,6 +879,122 @@ __dpct_inline__ void gr_up_multi_epi_kernel(GrMulti m) {
 }
 bool gr_up_epi() {   // STRATA_GR_UP_EPI=1: gr_up_multi_epi_kernel (opt-in)
     static const bool v = std::getenv("STRATA_GR_UP_EPI") != nullptr && std::atoi(std::getenv("STRATA_GR_UP_EPI")) != 0;
+    return v;
+}
+// STRATA_GR_UP_TREE=1 (with STRATA_GR_UP_EPI=1; off by default): gr_up_multi_epi_kernel's row dots without its
+// 32-lane warp sums. Each warp_sum step (v += xor-partner, partners 16, 8, 4, 2, 1) leaves both lanes of a pair the
+// same value (IEEE addition commutes), so every lane ends with one fixed tree over the 32 lane partials v[L]:
+//   ((v[L] + v[L+16]) + (v[L+8] + v[L+24])) + ((v[L+4] + v[L+20]) + (v[L+12] + v[L+28])), then across L's low 2 bits.
+// Here a row is 4 work-items of a 16-wide sub-group; work-item q computes the partials of lanes q, q+4, ..., q+28 with
+// dot8 as the warp's lanes did (lanes below 8 also add their second chunk), adds them in that tree, then gathers the
+// row's 4 subtotals and adds the last two levels itself (see below why not as xor shuffles): the same additions of the
+// same values. Bitwise the epilogue kernel as measured (gr_apply_parity's 32 cases and gr_bench, UHD 730), which the
+// source order alone does not promise. A row's 4 work-items share their sub-group's lo reads (4 rows read the same
+// addresses) instead of 32 lanes reading 1.28 KB of lo per row and token.
+template <int TT>
+__dpct_inline__ void gr_up_multi_epi_tree_kernel(GrMulti m) {
+    auto item = sycl::ext::oneapi::this_work_item::get_nd_item<3>();
+    auto wg = sycl::ext::oneapi::this_work_item::get_work_group<3>();
+    auto& lo = *sycl::ext::oneapi::group_local_memory_for_overwrite<float[kFusedGrMaxT][LR]>(wg);
+    auto& g = *sycl::ext::oneapi::group_local_memory_for_overwrite<float[kFusedGrMaxT][HC][UPM_COLS]>(wg);
+    const int t = (int) item.get_local_id(2);
+    const int d0 = (int) item.get_group(2) * UPM_COLS;
+    for (int i = t; i < TT * LR; i += THREADS) {   // the down kernel's partial sums, in split order, then silu
+        const int k = i / LR, r = i % LR;
+        float x = 0.0f;
+#pragma unroll
+        for (int sp = 0; sp < DOWN_SPLIT; ++sp) if (sp < m.nsplit) x += m.part[((size_t) sp * kFusedGrMaxT + k) * LR + r];
+        x /= (float) HC;
+        const float v = x / (1.0f + sycl::native::exp(-x));
+        lo[k][r] = v;
+        m.a[k].lo[r] = v;
+    }
+    item.barrier();
+    auto sg = item.get_sub_group();
+    const int lane = (int) sg.get_local_linear_id();       // 0..15
+    const int r = (t >> 4) * 4 + (lane >> 2);              // 16 sub-groups x 4 rows: the work-group's 64 rows
+    const int q = lane & 3;
+    const int c = r / UPM_COLS, dd = r - c * UPM_COLS;
+    const sycl::uint4* w4 = reinterpret_cast<const sycl::uint4*>(m.a[0].w_up + (size_t) (c * N + d0 + dd) * LR);
+    // v[k] = the partial of the warp's lane L for token k (gr_up_multi_epi_kernel's acc before warp_sum)
+    auto leaf = [&](int L, float* v) {
+        const sycl::uint4 wa = w4[L];
+        const bool second = L < LR / 8 - 32;
+        const sycl::uint4 wb = second ? w4[32 + L] : sycl::uint4(0, 0, 0, 0);
+#pragma unroll
+        for (int k = 0; k < TT; ++k) {
+            float acc = dot8(wa, lo[k] + L * 8);
+            if (second) acc += dot8(wb, lo[k] + (32 + L) * 8);
+            v[k] = acc;
+        }
+    };
+    float x0[TT], x1[TT], x2[TT], u2[TT];
+    leaf(q, x0); leaf(q + 16, x1);
+#pragma unroll
+    for (int k = 0; k < TT; ++k) x0[k] = x0[k] + x1[k];    // s1(q)
+    leaf(q + 8, x1); leaf(q + 24, x2);
+#pragma unroll
+    for (int k = 0; k < TT; ++k) u2[k] = x0[k] + (x1[k] + x2[k]);   // s2(q) = s1(q) + s1(q + 8)
+    leaf(q + 4, x0); leaf(q + 20, x1);
+#pragma unroll
+    for (int k = 0; k < TT; ++k) x0[k] = x0[k] + x1[k];    // s1(q + 4)
+    leaf(q + 12, x1); leaf(q + 28, x2);
+#pragma unroll
+    for (int k = 0; k < TT; ++k) {
+        const float u = u2[k] + (x0[k] + (x1[k] + x2[k]));  // s3(q) = s2(q) + s2(q + 4), s2(q + 4) = s1(q + 4) + s1(q + 12)
+        // s4, s5 = (s3(0) + s3(2)) + (s3(1) + s3(3)), added here in that order: written as two xor-shuffle steps
+        // (u += xor 2; u += xor 1) the device compiler added (s3(0) + s3(1)) + (s3(2) + s3(3)) instead (UHD 730)
+        const int b4 = lane & ~3;
+        const float a0 = sycl::select_from_group(sg, u, b4), a1 = sycl::select_from_group(sg, u, b4 + 1);
+        const float a2 = sycl::select_from_group(sg, u, b4 + 2), a3 = sycl::select_from_group(sg, u, b4 + 3);
+        if (q == 0) g[k][c][dd] = (a0 + a2) + (a1 + a3);
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    for (int j = t; j < TT * HC * UPM_COLS; j += THREADS) {   // (token, row) pairs; each thread its own g entry
+        const int k = j / (HC * UPM_COLS), rr = j - k * (HC * UPM_COLS);
+        const int cc = rr / UPM_COLS, de = rr - cc * UPM_COLS, i = cc * N + d0 + de;
+        const FusedGrArgs& a = m.a[k];
+        float rv = a.R[i];
+        const float wn = a.w_norm[i];
+        const float rsc = a.rs[cc];
+        if (a.apply) {
+            const float bo = a.bo_prev[d0 + de], ip = a.inj_prev[cc];
+            rv = sycl::fma(bo, 2.0f * sigmoidf_(ip / (float) HC), rv);
+            a.R_out[i] = rv;
+        }
+        const float x = rv * wn * rsc;
+        g[k][cc][de] = x * sigmoidf_(g[k][cc][de]);
+    }
+    item.barrier();
+    for (int i = t; i < TT * UPM_COLS; i += THREADS) {
+        const int k = i / UPM_COLS, col = i - k * UPM_COLS;
+        float sum = 0.0f;
+#pragma unroll
+        for (int cc = 0; cc < HC; ++cc) sum += g[k][cc][col];
+        m.a[k].mixed[d0 + col] = sum / (float) HC;
+    }
+}
+template <int TT>
+void launch_up_tree(sycl::queue* st, const GrMulti& m) {
+    st->parallel_for<dpct_kernel_name<class gr_up_multi_epi_tree_k, dpct_kernel_scalar<TT>>>(
+        sycl::nd_range<3>(sycl::range(1, 1, UPM_BLOCKS) * sycl::range(1, 1, THREADS), sycl::range(1, 1, THREADS)),
+        [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(16)]] { gr_up_multi_epi_tree_kernel<TT>(m); });
+}
+void launch_up_tree_t(sycl::queue* st, const GrMulti& m) {   // m.T is 1..kFusedGrMaxT (checked by the caller)
+    static_assert(kFusedGrMaxT == 8, "the cases below cover 1..8 tokens");
+    switch (m.T) {
+    case 1: launch_up_tree<1>(st, m); break;
+    case 2: launch_up_tree<2>(st, m); break;
+    case 3: launch_up_tree<3>(st, m); break;
+    case 4: launch_up_tree<4>(st, m); break;
+    case 5: launch_up_tree<5>(st, m); break;
+    case 6: launch_up_tree<6>(st, m); break;
+    case 7: launch_up_tree<7>(st, m); break;
+    default: launch_up_tree<8>(st, m); break;
+    }
+}
+bool gr_up_tree() {   // STRATA_GR_UP_TREE=1: gr_up_multi_epi_tree_kernel in place of gr_up_multi_epi_kernel (opt-in)
+    static const bool v = std::getenv("STRATA_GR_UP_TREE") != nullptr && std::atoi(std::getenv("STRATA_GR_UP_TREE")) != 0;
     return v;
 }
 
@@ -2146,6 +2289,11 @@ bool fused_gr_read_multi(const FusedGrArgs* a, int n_tok, float* xn_scratch, voi
                 });
         });
         const unsigned nred = unsigned((n_tok * GRS_ROWS + 127) / 128);
+        if (gr_red_batch())
+            st->parallel_for<dpct_kernel_name<class gr_down_reduce_batch_k>>(
+                sycl::nd_range<3>(sycl::range(1, 1, nred) * sycl::range(1, 1, 128), sycl::range(1, 1, 128)),
+                [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] { gr_down_reduce_batch_kernel(m); });
+        else
         st->parallel_for<dpct_kernel_name<class gr_down_reduce_k>>(
             sycl::nd_range<3>(sycl::range(1, 1, nred) * sycl::range(1, 1, 128), sycl::range(1, 1, 128)),
             [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] { gr_down_reduce_kernel(m); });
@@ -2208,6 +2356,8 @@ bool fused_gr_read_multi(const FusedGrArgs* a, int n_tok, float* xn_scratch, voi
         st->parallel_for<dpct_kernel_name<class gr_up_multi_epi_q8_k>>(
             sycl::nd_range<3>(sycl::range(1, 1, UPM_BLOCKS) * sycl::range(1, 1, THREADS), sycl::range(1, 1, THREADS)),
             [=](sycl::nd_item<3>) [[sycl::reqd_sub_group_size(32)]] { gr_up_multi_epi_q8_kernel(m); });
+    } else if (gr_up_epi() && gr_up_tree()) {
+        launch_up_tree_t(st, m);
     } else if (gr_up_epi()) {
         auto exp_props = sycl::ext::oneapi::experimental::properties{
             sycl::ext::oneapi::experimental::use_root_sync};
