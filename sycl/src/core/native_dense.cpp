@@ -29,9 +29,16 @@ bool in_range(const std::string& name) {
     const int l = std::atoi(name.c_str() + 4);
     return l >= g_layer_lb && l < g_layer_le;
 }
-// S23 experiment (STRATA_HC_Q8=1): the hyper-connection projections' Q8_0 bytes for the verify read
+// S23 experiment (STRATA_HC_Q8=1, or =2 below): the hyper-connection projections' Q8_0 bytes for the verify read
 bool hc_q8_requested() {
-    static const bool on = [] { const char* v = std::getenv("STRATA_HC_Q8"); return v != nullptr && v[0] == '1'; }();
+    static const bool on = [] { const char* v = std::getenv("STRATA_HC_Q8"); return v != nullptr && (v[0] == '1' || v[0] == '2'); }();
+    return on;
+}
+// SYCL port, STRATA_HC_Q8=2: a pack whose layers' down / up projections are BF16 (no Q8_0 copy in the GGUF) gets
+// them quantized here to Q8_0 (ggml's reference rounding) for the same read. Not the final mixer's (output_hc_*):
+// its Q8_0 read (verify.cpp, S25) does not take STRATA_FUSE_HEAD_GR's pending write, and it is one read a window
+bool hc_q8_from_bf16() {
+    static const bool on = [] { const char* v = std::getenv("STRATA_HC_Q8"); return v != nullptr && v[0] == '2'; }();
     return on;
 }
 bool hc_q8_name(const std::string& name) {
@@ -75,6 +82,17 @@ std::vector<uint8_t> q8_0_of(const float* x, uint64_t n) {
         const uint16_t hb = half_bits(d);
         std::memcpy(o, &hb, 2);
         for (int j = 0; j < 32; ++j) o[2 + j] = (uint8_t) (int8_t) std::lround(x[b * 32 + j] * id);
+    }
+    return out;
+}
+// SYCL port: the layout the Q8_0 hyper-connection read takes (fused_gr.dp.cpp): rows x cols Q8_0 blocks (row-major)
+// as the int8 values row-major, then the fp16 block scales in block order - the same bytes, aligned loads
+std::vector<uint8_t> q8_split_of(const uint8_t* blk, uint64_t rows, uint64_t cols) {
+    const uint64_t nb = rows * cols / 32;
+    std::vector<uint8_t> out((size_t) (nb * 34));
+    for (uint64_t b = 0; b < nb; ++b) {
+        std::memcpy(out.data() + b * 32, blk + b * 34 + 2, 32);
+        std::memcpy(out.data() + nb * 32 + b * 2, blk + b * 34, 2);
     }
     return out;
 }
@@ -321,7 +339,10 @@ bool NativeDense::load(const std::vector<std::string> &shards,
                     // STRATA_HC_Q8_INJECT=1 asks for a Q8_0 copy
                     static const bool q8_inject = [] { const char* v = std::getenv("STRATA_HC_Q8_INJECT"); return v && v[0] == '1'; }();
                     const bool f32_inject = q8_inject && tensor.type == 0 && tensor.name.ends_with("_inject.weight");
-                    if ((tensor.type != 8 && !f32_inject) || !hc_q8_name(tensor.name) || tensor.shape.size() != 2) continue;
+                    const bool bf16_proj = hc_q8_from_bf16() && tensor.type == 30 && tensor.name.rfind("blk.", 0) == 0 &&
+                                           !tensor.name.ends_with("_inject.weight");
+                    if ((tensor.type != 8 && !f32_inject && !bf16_proj) || !hc_q8_name(tensor.name) || tensor.shape.size() != 2)
+                        continue;
                     auto found = table.table_.find(tensor.name);
                     if (found == table.table_.end() || found->second.hc_q8 != nullptr) continue;
                     auto& ref = found->second;
@@ -332,6 +353,19 @@ bool NativeDense::load(const std::vector<std::string> &shards,
                     void* p = nullptr;
                     std::vector<uint8_t> q8;
                     if (f32_inject) q8 = q8_0_of((const float*) gguf.tensor_data(tensor), (uint64_t) ref.ne0 * (uint64_t) ref.ne1);
+                    if (bf16_proj) {
+                        const uint64_t n = (uint64_t) ref.ne0 * (uint64_t) ref.ne1;
+                        const uint16_t* b = (const uint16_t*) gguf.tensor_data(tensor);
+                        std::vector<float> f((size_t) n);
+                        for (uint64_t i = 0; i < n; ++i) {
+                            const uint32_t u = (uint32_t) b[i] << 16;
+                            std::memcpy(&f[(size_t) i], &u, 4);
+                        }
+                        q8 = q8_0_of(f.data(), n);
+                    }
+                    const std::vector<uint8_t> split = q8_split_of(
+                        f32_inject || bf16_proj ? q8.data() : (const uint8_t*) gguf.tensor_data(tensor),
+                        (uint64_t) ref.ne1, (uint64_t) ref.ne0);
                     if (DPCT_CHECK_ERROR(
                             p = (void *)strata::malloc_device_guarded(
                                 bytes, dpct::get_in_order_queue())) != 0 ||
@@ -343,10 +377,7 @@ bool NativeDense::load(const std::vector<std::string> &shards,
                         API to ensure synchronization behavior.
                         */
                         DPCT_CHECK_ERROR(dpct::get_in_order_queue().memcpy(
-                            p,
-                            f32_inject ? (const void *)q8.data()
-                                       : gguf.tensor_data(tensor),
-                            bytes).wait()) != 0) {
+                            p, (const void *)split.data(), bytes).wait()) != 0) {
                         err = "native dense (STRATA_HC_Q8) upload " + tensor.name; return false;
                     }
                     ref.hc_q8 = p;
@@ -402,7 +433,8 @@ bool NativeDense::load(const std::vector<std::string> &shards,
         scratch_ = scratch.release();
         bytes_ = total + hc_q8_bytes;
         if (hc_q8_requested())
-            std::fprintf(stderr, "strata: STRATA_HC_Q8=1: %.2f GiB of Q8_0 hyper-connection projections for the verify read\n",
+            std::fprintf(stderr, "strata: STRATA_HC_Q8=%s: %.2f GiB of Q8_0 hyper-connection projections for the verify read\n",
+                         hc_q8_from_bf16() ? "2 (BF16 quantized at load)" : "1",
                          (double) hc_q8_bytes / 1073741824.0);
         return true;
     } catch (const std::exception& error) {
