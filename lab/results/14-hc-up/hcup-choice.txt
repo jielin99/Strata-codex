@@ -1,0 +1,49 @@
+problems: 0
+choice: e2e  (e2e: W(both) < 0.9 x W(base); none with any problem)
+bitwise: gr_apply_parity base = rb True; base = both True (0 of 32 cases differ); gr_bench base and rb = the default read's checksums; both differs at T []
+bitwise both: True
+
+median us (3 rounds): span / norm down reduce up, T = 1..6
+  base T1:   287.7 /   15.9  105.4   32.4  129.0
+  base T2:   305.1 /   19.5  108.0   30.3  145.6
+  base T3:   348.8 /   22.5  114.0   31.6  172.2
+  base T4:   389.4 /   25.8  119.6   39.3  199.7
+  base T5:   431.9 /   29.4  126.1   40.2  231.9
+  base T6:   473.6 /   34.8  132.9   40.4  259.5
+  rb   T1:   268.7 /   15.5   99.3   19.9  130.0
+  rb   T2:   288.0 /   17.2  104.3   19.9  142.2
+  rb   T3:   317.1 /   20.9  108.2   20.7  162.8
+  rb   T4:   364.9 /   24.8  117.9   27.5  187.6
+  rb   T5:   406.1 /   28.0  124.1   27.2  220.3
+  rb   T6:   438.8 /   31.8  125.9   27.7  247.8
+  tree T1:   242.2 /   14.8  102.2   29.5   91.6
+  tree T2:   306.3 /   19.3  105.0   32.1  142.8
+  tree T3:   329.0 /   25.0  112.4   34.2  154.4
+  tree T4:   361.8 /   28.4  119.8   42.9  167.5
+  tree T5:   391.2 /   32.6  128.4   45.0  185.0
+  tree T6:   401.7 /   36.2  128.2   43.0  192.3
+  both T1:   238.2 /   14.6  105.3   20.2   92.7
+  both T2:   297.5 /   17.8  106.7   21.6  145.0
+  both T3:   311.6 /   22.0  112.7   21.9  150.1
+  both T4:   348.6 /   26.7  120.0   30.4  167.5
+  both T5:   377.9 /   31.9  128.6   29.9  186.0
+  both T6:   395.3 /   35.0  132.4   30.8  191.4
+
+W = 0.12 s1 + 0.14 s2 + 0.12 s3 + 0.62 s4 (median span in us):
+  base: W 360.5  (1.0000 x base)
+  rb: W 336.9  (0.9344 x base)
+  tree: W 335.7  (0.9313 x base)
+  both: W 323.8  (0.8980 x base)
+per-round W (recorded only):
+  round 1 base: W 360.5
+  round 1 rb: W 341.6
+  round 1 tree: W 337.2
+  round 1 both: W 352.7
+  round 2 rb: W 335.9
+  round 2 tree: W 441.8
+  round 2 both: W 316.6
+  round 2 base: W 401.6
+  round 3 tree: W 334.1
+  round 3 both: W 324.7
+  round 3 base: W 354.3
+  round 3 rb: W 335.5

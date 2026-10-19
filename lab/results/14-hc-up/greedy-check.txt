@@ -1,0 +1,14 @@
+1-A g1 553ac32f017ae0be
+2-B g1 553ac32f017ae0be
+3-B g1 553ac32f017ae0be
+4-A g1 553ac32f017ae0be
+5-A g1 553ac32f017ae0be
+6-B g1 553ac32f017ae0be
+g1 all six equal: True; same as 13 A: True
+1-A g2 1c1c19249884638f
+2-B g2 1c1c19249884638f
+3-B g2 1c1c19249884638f
+4-A g2 1c1c19249884638f
+5-A g2 1c1c19249884638f
+6-B g2 1c1c19249884638f
+g2 all six equal: True; same as 13 A: True

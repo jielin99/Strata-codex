@@ -1,0 +1,12 @@
+device: Intel(R) Arc(TM) 140T GPU (32GB)
+env STRATA_GR_UP_EPI=1
+env STRATA_GR_DOWN_V2=1
+env STRATA_GR_RED_BATCH=1
+env STRATA_GR_UP_TREE=1
+T	span_us	kernels	k0_us	k1_us	k2_us	k3_us	k4_us	gaps_us	bad
+1	238.2	4	14.8	106.0	20.2	92.7	-	4.6	0
+2	297.5	4	17.8	106.7	23.4	145.0	-	4.6	0
+3	319.8	4	22.0	112.7	24.2	156.5	-	4.4	0
+4	348.6	4	26.3	120.0	30.4	167.5	-	4.4	0
+5	376.5	4	31.9	124.3	29.8	186.0	-	4.5	0
+6	387.9	4	33.5	129.3	30.2	190.5	-	4.4	0
