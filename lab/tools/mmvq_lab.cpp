@@ -53,7 +53,8 @@ int main(int argc, char** argv) {
     std::printf("driver: %s\n", dev.get_info<sycl::info::device::driver_version>().c_str());
     std::printf("working set: %zu MiB, %.0f ms per case\n", ws_mib, ms_per_case);
     for (const char* k : {"STRATA_MMVQ_SG", "STRATA_MMVQ_PF", "STRATA_MMVQ_WIDE_RPW", "STRATA_MMVQ_A2", "STRATA_MMVQ_WIDE_K",
-                          "STRATA_MMVQ_WIDE_32", "STRATA_MMVQ_WAVE", "STRATA_MMVQ_RPW", "STRATA_MMVQ_Q6_SWAR"})
+                          "STRATA_MMVQ_WIDE_32", "STRATA_MMVQ_WAVE", "STRATA_MMVQ_RPW", "STRATA_MMVQ_Q6_SWAR",
+                          "STRATA_MMVQ_XSLM"})
         if (const char* v = std::getenv(k)) std::printf("env %s=%s\n", k, v);
     FILE* dump = std::getenv("MMVQ_LAB_DUMP") ? std::fopen(std::getenv("MMVQ_LAB_DUMP"), "wb") : nullptr;
     if (std::getenv("MMVQ_LAB_DUMP") && dump == nullptr) { std::fprintf(stderr, "mmvq_lab: cannot open MMVQ_LAB_DUMP\n"); return 1; }
