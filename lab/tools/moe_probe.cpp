@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
     std::printf("driver: %s\n", dev.get_info<sycl::info::device::driver_version>().c_str());
     std::printf("%.0f ms per case\n", ms_per_case);
     for (const char* e : {"STRATA_Q2_SWAR", "STRATA_GU_LANES", "STRATA_DOWN_LANES", "STRATA_EXPERT_SPLIT", "STRATA_OLD_IQ_MMVQ",
-                          "STRATA_GROUPED_V1", "STRATA_IQ_STAGE_GRID", "STRATA_GU_GRID_SLM"})
+                          "STRATA_GROUPED_V1", "STRATA_IQ_STAGE_GRID", "STRATA_GU_GRID_SLM", "STRATA_GU_GRID_SLM2"})
         if (const char* v = std::getenv(e)) std::printf("env %s=%s\n", e, v);
 
     const int gmax = std::max((int) groups_of(max_t).size(), kGroupsE);
