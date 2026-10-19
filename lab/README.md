@@ -3,8 +3,8 @@
 本分支只存放实验手册、结论和测量工具，不放引擎代码。引擎代码的改动走功能分支（目前是
 `local-v0.1.43.1-intel-npu`）。只推送到 `jielin99/Strata-codex`，不推上游，不动 `main` 和 tag。
 
-当前目标：让 Strata 在 Windows 11 + Arc 140T 笔记本上**生成（decode）更快**。总体计划和已确认的事实见
-`lab/HISTORY.md` 开头。
+目标：让 Strata 在 Windows 11 + Arc 140T 笔记本上**生成（decode）更快**。总体计划和已确认的事实见
+`lab/HISTORY.md` 开头。**实验已于 2026-10-20 收尾**（到 15 为止），总结见 `lab/analysis/closing.md`。
 
 ## 目录
 
