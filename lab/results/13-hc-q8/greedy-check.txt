@@ -1,0 +1,11 @@
+g1 A: all equal
+553ac32f017ae0be: 1-A, 6-A, 8-A
+g1 B: all equal
+553ac32f017ae0be: 2-B, 4-B, 9-B
+g1 A comparison: 08 True, 12 False
+
+g2 A: all equal
+1c1c19249884638f: 1-A, 6-A, 8-A
+g2 B: all equal
+1c1c19249884638f: 2-B, 4-B, 9-B
+g2 A comparison: 08 True, 12 False

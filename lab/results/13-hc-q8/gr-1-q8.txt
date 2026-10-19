@@ -1,0 +1,6 @@
+fused GR read (Q8_0), 1 tokens:   274.4 us (26 GB/s of weights)  checksum f72c01275654706f  sum 1.856496501e+01
+fused GR read (Q8_0), 2 tokens:   327.0 us (22 GB/s of weights)  checksum e11a1f7deebf374a  sum 3.066434500e+01
+fused GR read (Q8_0), 3 tokens:   376.5 us (19 GB/s of weights)  checksum d1ffa82a7c5ded8b  sum 4.413505358e+01
+fused GR read (Q8_0), 4 tokens:   461.9 us (15 GB/s of weights)  checksum 58f4ee1e873b5eee  sum 9.500638604e+01
+fused GR read (Q8_0), 5 tokens:   484.7 us (15 GB/s of weights)  checksum e61d53f94ee4f28e  sum 1.058749297e+02
+fused GR read (Q8_0), 6 tokens:   532.9 us (13 GB/s of weights)  checksum 7ce08e4e8a5bc5e1  sum 1.293895084e+02

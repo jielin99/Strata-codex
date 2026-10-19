@@ -1,0 +1,13 @@
+gq-parity 0
+gr-1-bf16 0
+gr-1-q8 0
+gr-1-bf16d 0
+gr-1-q8d 0
+gr-2-q8 0
+gr-2-bf16d 0
+gr-2-q8d 0
+gr-2-bf16 0
+gr-3-bf16d 0
+gr-3-q8d 0
+gr-3-bf16 0
+gr-3-q8 0

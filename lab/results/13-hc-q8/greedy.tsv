@@ -1,0 +1,13 @@
+segment	prompt	sha256_16	completion_tokens	finish_reason	cached_tokens	source_message	source_completion_tokens	source_finish_reason
+1-A	g1	553ac32f017ae0be	198	stop	0	1-A/greedy-g1.json:9	1-A/greedy-g1.json:19	1-A/greedy-g1.json:14
+1-A	g2	1c1c19249884638f	242	stop	0	1-A/greedy-g2.json:9	1-A/greedy-g2.json:19	1-A/greedy-g2.json:14
+2-B	g1	553ac32f017ae0be	198	stop	0	2-B/greedy-g1.json:9	2-B/greedy-g1.json:19	2-B/greedy-g1.json:14
+2-B	g2	1c1c19249884638f	242	stop	0	2-B/greedy-g2.json:9	2-B/greedy-g2.json:19	2-B/greedy-g2.json:14
+4-B	g1	553ac32f017ae0be	198	stop	0	4-B/greedy-g1.json:9	4-B/greedy-g1.json:19	4-B/greedy-g1.json:14
+4-B	g2	1c1c19249884638f	242	stop	0	4-B/greedy-g2.json:9	4-B/greedy-g2.json:19	4-B/greedy-g2.json:14
+6-A	g1	553ac32f017ae0be	198	stop	0	6-A/greedy-g1.json:9	6-A/greedy-g1.json:19	6-A/greedy-g1.json:14
+6-A	g2	1c1c19249884638f	242	stop	0	6-A/greedy-g2.json:9	6-A/greedy-g2.json:19	6-A/greedy-g2.json:14
+8-A	g1	553ac32f017ae0be	198	stop	0	8-A/greedy-g1.json:9	8-A/greedy-g1.json:19	8-A/greedy-g1.json:14
+8-A	g2	1c1c19249884638f	242	stop	0	8-A/greedy-g2.json:9	8-A/greedy-g2.json:19	8-A/greedy-g2.json:14
+9-B	g1	553ac32f017ae0be	198	stop	0	9-B/greedy-g1.json:9	9-B/greedy-g1.json:19	9-B/greedy-g1.json:14
+9-B	g2	1c1c19249884638f	242	stop	0	9-B/greedy-g2.json:9	9-B/greedy-g2.json:19	9-B/greedy-g2.json:14
