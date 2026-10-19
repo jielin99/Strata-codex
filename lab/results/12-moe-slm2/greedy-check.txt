@@ -1,0 +1,7 @@
+g1: all equal
+559a75356eb39f09: 1-A, 2-B, 3-B, 4-A, 5-A, 6-B
+Comparison with 08: False
+
+g2: all equal
+a6c46dc05f536ef5: 1-A, 2-B, 3-B, 4-A, 5-A, 6-B
+Comparison with 08: False

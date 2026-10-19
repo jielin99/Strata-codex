@@ -1,0 +1,1 @@
+STRATA_Q2_SWAR=1
